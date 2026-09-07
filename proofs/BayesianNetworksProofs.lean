@@ -1,0 +1,10 @@
+import BayesianNetworksProofs.Basic
+import BayesianNetworksProofs.Schema.Desc
+import BayesianNetworksProofs.Schema.BayesNet
+import BayesianNetworksProofs.Finite.BayesNet
+import BayesianNetworksProofs.Finite.Evaluation
+import BayesianNetworksProofs.Finite.Intervention
+import BayesianNetworksProofs.Finite.Tensor
+import BayesianNetworksProofs.Finite.Open
+import BayesianNetworksProofs.Markov.Basic
+import BayesianNetworksProofs.Finite.Probability

@@ -1,0 +1,10 @@
+{"version": {"ACSets": "0.2.29", "ACSetSchema": "0.0.1"},
+ "equations": [],
+ "Ob": [{"name": "Variable"}, {"name": "State"}],
+ "Hom": [{"name": "state_variable", "dom": "State", "codom": "Variable"}],
+ "AttrType": [{"name": "Label"}, {"name": "Position"}, {"name": "Ref"}],
+ "Attr":
+ [{"name": "variable_name", "dom": "Variable", "codom": "Label"},
+  {"name": "space_ref", "dom": "Variable", "codom": "Ref"},
+  {"name": "state_name", "dom": "State", "codom": "Label"},
+  {"name": "state_position", "dom": "State", "codom": "Position"}]}

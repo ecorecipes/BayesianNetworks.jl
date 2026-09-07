@@ -1,0 +1,29 @@
+name = "bayesian_networks_proofs"
+defaultTargets = ["BayesianNetworksProofs"]
+# Share one dependency checkout (Mathlib ~7 GB) across the ecosystem's proofs/ projects. See ADR 0005.
+packagesDir = "../../.lake-packages"
+
+# mdgen turns the `/-! ... -/` module docs into Markdown (`make mdgen`; see README "Documents").
+# Pinned to the tag matching the toolchain; `main` tracks the newest Lean release candidate.
+# Listed before mathlib: Lake lets the *last* `require` win, so Mathlib's pins (e.g. of `Cli`,
+# which mdgen also needs) take precedence and `lake exe cache get` computes the right hashes.
+[[require]]
+name = "mdgen"
+git = "https://github.com/Seasawher/mdgen"
+rev = "v4.30.0"
+
+# Pin Mathlib to the same tag as the toolchain (Lean v4.30.0) so that
+# `lake exe cache get` fetches prebuilt .oleans. Matches the open-systems Lean project.
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.30.0"
+
+[[lean_lib]]
+name = "BayesianNetworksProofs"
+
+# `lake exe emit_schema [--check]`: write / verify proofs/schemas/*.schema.json (ACSets.jl format).
+# Main.lean imports only the Mathlib-free Schema modules, so the executable links Lean core alone.
+[[lean_exe]]
+name = "emit_schema"
+root = "Main"

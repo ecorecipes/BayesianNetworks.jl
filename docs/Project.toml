@@ -1,0 +1,15 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
+BayesianNetworks = "47d2e50c-3d9a-425e-96fd-023c794d3c65"
+FiniteKernels = "2ee73795-50db-4096-9573-22982ed4949b"
+BayesianNetworkFormats = "590d4596-919e-4d5f-b4a5-097a6400eab8"
+
+[compat]
+Documenter = "1"
+DocumenterCitations = "1"
+
+[sources]
+BayesianNetworks = {path = ".."}
+FiniteKernels = {path = "../../FiniteKernels.jl"}
+BayesianNetworkFormats = {path = "../../BayesianNetworkFormats.jl"}

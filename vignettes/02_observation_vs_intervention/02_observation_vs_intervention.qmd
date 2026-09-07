@@ -1,0 +1,210 @@
+---
+title: "Observation versus intervention"
+author: "Simon Frost"
+format:
+  html:
+    code-fold: false
+    toc: true
+  gfm:
+    toc: true
+  pdf: default
+engine: julia
+---
+
+## Overview
+
+Seeing that the vegetation is dense and forcing the vegetation to be dense are
+different operations with different consequences [@Pearl2009]. `observe` records
+evidence and leaves the network untouched; `do_intervention` rewrites the network,
+replacing the mechanism of the intervened variable by a constant -- the "cut" that
+string-diagram surgery performs on a causal model [@JacobsKissingerZanasi2019;
+@LorenzTull2023]. This vignette compares the two numerically on a chain and on a fork,
+then on the reference network, and reads the provenance of the rewrites from the model's
+history.
+
+## Setup
+
+```{julia}
+using BayesianNetworks
+```
+
+## A chain
+
+In the chain `Rain → Sprinkler → Wet`, observing the sprinkler tells us something about
+the rain (the sprinkler is turned on less on rainy days); switching it on by hand does
+not.
+
+```{julia}
+chain = bayesnet(:Rain => [:no, :yes], :Sprinkler => [:off, :on], :Wet => [:dry, :wet];
+                 mechanisms = [:Sprinkler => :Rain, :Wet => :Sprinkler])
+c = BayesModel(chain)
+c = bind_cpt(c, [:Rain => [0.7, 0.3],
+                 :Sprinkler => [0.5 0.5; 0.9 0.1],     # rows = Rain
+                 :Wet => [0.9 0.1; 0.2 0.8]])          # rows = Sprinkler
+round.(marginal(c, :Rain).table; digits = 4)
+```
+
+Observing the sprinkler on shifts the belief about the rain, because a sprinkler that is
+on is weak evidence for a dry day:
+
+```{julia}
+round.(marginal(observe(c, :Sprinkler => :on), :Rain).table; digits = 4)
+```
+
+Switching the sprinkler on by hand changes nothing upstream: the rewritten network has
+no arrow into `Sprinkler` left for the information to travel back along.
+
+```{julia}
+round.(marginal(do_intervention(c, :Sprinkler => :on), :Rain).table; digits = 4)
+```
+
+Downstream, the two agree: `Wet` depends on `Sprinkler` only through its own mechanism,
+which neither operation touches.
+
+```{julia}
+marginal(observe(c, :Sprinkler => :on), :Wet).table ≈
+    marginal(do_intervention(c, :Sprinkler => :on), :Wet).table
+```
+
+## A fork
+
+In the fork `Season → Rain` and `Season → Sprinkler`, rain and sprinkler are
+dependent through the common cause. Observing rain changes the belief about the
+sprinkler; making it rain does not.
+
+```{julia}
+fork = bayesnet(:Season => [:dry, :wet], :Rain => [:no, :yes], :Sprinkler => [:off, :on];
+                mechanisms = [:Rain => :Season, :Sprinkler => :Season])
+f = BayesModel(fork)
+f = bind_cpt(f, [:Season => [0.5, 0.5],
+                 :Rain => [0.9 0.1; 0.3 0.7],          # rows = Season
+                 :Sprinkler => [0.2 0.8; 0.8 0.2]])    # rows = Season
+(marginal(f, :Sprinkler).table,
+ marginal(observe(f, :Rain => :yes), :Sprinkler).table,
+ marginal(do_intervention(f, :Rain => :yes), :Sprinkler).table)
+```
+
+## What the intervention does to the network
+
+`do_intervention` is a local rewrite of the ACSet: the mechanism of the variable and
+its inputs are removed, and a mechanism with no inputs and a `PointMassRef` is added.
+Nothing else changes; the graph loses the incoming edges of the variable. The
+distribution of the rewritten network is therefore the truncated factorisation
+[@Pearl2009]: the same product of conditional probability tables, with the factor for
+the intervened variable replaced by a point mass.
+
+```{julia}
+m = reference_habitat_model()
+md = do_intervention(m, :Vegetation => :dense)
+mechanism_names(syntax(md))
+```
+
+```{julia}
+Symbol[variable_name(syntax(md), p) for p in parents(syntax(md), :Vegetation)]
+```
+
+`Vegetation` has no parents left, and the drawing shows the two arrows that used to
+enter it are gone:
+
+```{julia}
+to_graphviz(md)
+```
+
+The point mass is materialised on demand as a kernel, so evaluation works as before:
+
+```{julia}
+kernel(md, :Vegetation).table
+```
+
+Upstream of `Vegetation`, observation moves `SoilMoisture` and intervention does not;
+downstream, both give the same numbers.
+
+```{julia}
+mo = observe(m, :Vegetation => :dense)
+(round.(marginal(m, :SoilMoisture).table; digits = 4),
+ round.(marginal(mo, :SoilMoisture).table; digits = 4),
+ round.(marginal(md, :SoilMoisture).table; digits = 4))
+```
+
+```{julia}
+marginal(mo, :Occupancy) ≈ marginal(md, :Occupancy)
+```
+
+Evidence lives in the wrapper, so a model can carry both: `observe` on an intervened
+model conditions the interventional distribution.
+
+```{julia}
+mdo = observe(md, :Climate => :dry)
+evidence(mdo), intervened_variables(mdo)
+```
+
+```{julia}
+to_graphviz(mdo)
+```
+
+## Soft interventions
+
+A soft intervention replaces a mechanism by another one, with a chosen set of parents
+and a kernel supplied by the caller. Here `GrazingPressure` is made to depend on
+`Climate` (grazing is reduced in dry years):
+
+```{julia}
+k = cpt([axis(syntax(m), :Climate)], axis(syntax(m), :GrazingPressure),
+        [0.8 0.2; 0.5 0.5; 0.3 0.7])                    # rows = Climate
+ms = soft_intervention(m, :GrazingPressure => k)
+variable_name.(Ref(syntax(ms)), parents(syntax(ms), :GrazingPressure))
+```
+
+```{julia}
+round.(marginal(m, :Vegetation).table; digits = 4), round.(marginal(ms, :Vegetation).table; digits = 4)
+```
+
+The result is validated: a soft intervention that would create a cycle is rejected.
+
+```{julia}
+try
+    soft_intervention(m, :Climate => NamedRef("k"); parents = [:Occupancy])
+catch e
+    sprint(showerror, e)
+end
+```
+
+## Provenance
+
+Every rewrite is recorded in the model's `history` as a `ModelEvent` with the mechanism
+that was removed and the one that was added, so an intervened model explains itself.
+
+```{julia}
+m2 = soft_intervention(md, :GrazingPressure => k; note = "reduced grazing in dry years")
+for e in history(m2)
+    println(e.kind, " on ", e.target)
+    println("  removed: ", e.removed)
+    println("  added:   ", e.added)
+    isempty(e.note) || println("  note:    ", e.note)
+end
+```
+
+```{julia}
+intervened_variables(m2), is_intervened(m2, :Vegetation), is_intervened(m2, :Occupancy)
+```
+
+The events are part of the JSON written by `json_model`, so the provenance travels with
+the model (see the serialisation vignette).
+
+## Summary
+
+Observation is a fact about the semantics and leaves the syntax alone; intervention is
+an edit of the syntax, deleting one mechanism and putting a constant in its place, so
+the two agree downstream of the manipulated variable and disagree upstream of it. Soft
+interventions replace a mechanism by another one rather than by a constant, and every
+rewrite is recorded in the model's history, so an intervened model can say what was done
+to it. The next vignette,
+[Serialisation, provenance and CatColab export](../03_serialization_and_provenance/03_serialization_and_provenance.md),
+writes these models to files and reads them back. Taking networks apart instead of
+editing them in place is the subject of `CategoricalBayesianNetworks.jl`'s open-networks
+vignette.
+
+## References
+
+::: {#refs}
+:::

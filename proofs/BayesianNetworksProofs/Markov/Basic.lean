@@ -16,7 +16,8 @@ instance (`@instance ThMarkovCategory{FiniteSpace,FiniteKernel}`):
 * `state_discard` — a state `p : I → X` composed with discard is the identity of the unit
   (a normalised distribution has total mass one).
 
-No finite-stochastic `MarkovCategory` instance is attempted here (deferred; see the plan).
+The concrete finite-stochastic instance is in the sibling `FiniteKernels.jl` proof project,
+module `Theory/FinStoch.lean`; this module only uses Mathlib's abstract classes.
 Mathlib's `Deterministic` is `IsComonHom`, whose composition instance already exists; the
 theorem below simply names it.
 -/

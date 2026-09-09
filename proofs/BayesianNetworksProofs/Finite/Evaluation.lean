@@ -174,7 +174,8 @@ theorem marg_partialJoint_eq_one (κ : bn.Kernel R) (hinj : Function.Injective b
 /-! ## Proposition 1 -/
 
 /-- **Proposition 1a.** In a closed network with a topological order, local and normalised
-kernels make the joint a probability distribution. -/
+kernels make the joint sum to one. A probability interpretation additionally requires
+nonnegative entries; this is automatic over `ℝ≥0`, but not over a general semiring. -/
 theorem sum_joint_eq_one (κ : bn.Kernel R) (hclosed : bn.Closed) (ord : bn.TopoOrder)
     (hloc : ∀ m, Local κ m) (hnorm : ∀ m, Normalised κ m) :
     ∑ x, joint κ x = 1 := by

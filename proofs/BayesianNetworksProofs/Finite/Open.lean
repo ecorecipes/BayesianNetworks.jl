@@ -7,8 +7,8 @@ import BayesianNetworksProofs.Finite.Tensor
 Propositions 2 and 3), for the concrete finite model — no category theory, no quotient types.
 
 An `OpenFinBayesNet` is a `FinBayesNet` with two distinguished sets of variables, `inputs` and
-`outputs`, satisfying the *typed-interface rule* of `BayesianNetworks.jl`'s `Open`
-(`src/open.jl`, `validation_errors(::OpenBayesNet)`):
+`outputs`, satisfying the finite-model part of the *typed-interface rule* of
+`CategoricalBayesianNetworks.jl`'s `Open` (`src/open.jl`, `validation_errors(::OpenBayesNet)`):
 
 | Julia rule | Lean field |
 |---|---|
@@ -17,12 +17,11 @@ An `OpenFinBayesNet` is a `FinBayesNet` with two distinguished sets of variables
 | rule 3: every mechanism-free apex variable is an input | `exogenous_input` |
 | rule 4: the derived graph is acyclic | `topo` (a `TopoOrder`) |
 
-Rule 2 (the input leg is injective) and rule 5 (legs natural, i.e. name-, reference- and
-state-preserving) are absorbed into the representation: the feet here are *subsets* of the apex
-variables rather than separate objects with a leg, so the leg is the inclusion, which is
-injective and natural by construction. The interface match of `compose` is the injection `ι`
-below, which plays the part of Catlab's `interface_matches` and of the pushout's gluing map;
-`states_equiv` is the "same states, same positions" half of `interface_matches`.
+Rule 2 (the input leg is injective) is encoded by taking feet to be *subsets* of apex variables.
+Rule 5's name-, reference- and position-preserving attribute conditions are **not** modelled:
+those attributes are erased. The interface match of `compose` is the injection `ι` below;
+`states_equiv` transports abstract state types, but does not assert preservation of a
+`state_position` attribute. Noninjective output legs are also absent from this representation.
 
 ## Composition without quotients
 
@@ -69,9 +68,9 @@ assignment of the composite as an assignment of `A` and of `B` (a glued variable
   side and `T` on the `B` side, is `∑_S ⟦A⟧ · (∑_T ⟦B⟧)`: the composite semantics is the sum
   over the interface of the product of the two open semantics. Taking `S` to be `A`'s hidden
   variables together with the glued interface and `T` to be `B`'s hidden variables gives
-  `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧`. What is *not* proved here is the last book-keeping step that rewrites
-  those two marginals as the open semantics of `A` and of `B` on their own variable types; see
-  `Roadmap.lean`.
+  `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` when neither network has pass-through variables. The transfer to the
+  open semantics of `A` and `B` on their own variable types is now proved in
+  `Finite/OpenSemantics.lean`; partial matching is permitted.
 -/
 
 namespace BayesianNetworksProofs
@@ -499,4 +498,3 @@ end Composable
 end OpenFinBayesNet
 
 end BayesianNetworksProofs
-

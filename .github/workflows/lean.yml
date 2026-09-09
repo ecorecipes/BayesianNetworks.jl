@@ -4,9 +4,9 @@ name: Lean
 on:
   push:
     branches: [main]
-    paths: ['proofs/**']
+    paths: ['proofs/**', '.github/workflows/lean.yml']
   pull_request:
-    paths: ['proofs/**']
+    paths: ['proofs/**', '.github/workflows/lean.yml']
   workflow_dispatch:
 jobs:
   build:
@@ -34,7 +34,9 @@ jobs:
           build-args: "--wfail"
       - name: Axiom audit
         working-directory: proofs
-        run: lake env lean Audit.lean
+        run: |
+          python3 scripts/audit.py --self-test
+          make audit
       - name: Committed schema JSON matches the Lean schema terms
         working-directory: proofs
         run: lake exe emit_schema --check

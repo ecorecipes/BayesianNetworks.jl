@@ -172,3 +172,19 @@ using Random
               [0.0, 0.0, 1.0]
     end
 end
+@testset "compound kernel normalization tolerance" begin
+    for (n, atol, delta) in ((3, DEFAULT_ATOL, 9e-9),
+                             (2, 1e-6, prevfloat(0.500001) - 0.5))
+        names_ = [Symbol(:X, i) for i in 1:n]
+        bn = bayesnet((x => [:no, :yes] for x in names_)...)
+        row = [0.5, 0.5 + delta]
+        m = bind_cpt(BayesModel(bn), [x => row for x in names_]; atol=atol)
+        J = joint_distribution(m; atol=atol)
+        @test sum(J.table) ≈ sum(row)^n
+        @test sum(J.table) > 1 + (n == 3 ? atol : n * atol)
+        @test size(J.table) == ntuple(_ -> 2, n)
+    end
+    @test BayesianNetworks._joint_atol(1e-6, 2) > 2e-6
+    @test BayesianNetworks._joint_atol(0.0, 3) == 0
+    @test_throws ArgumentError BayesianNetworks._joint_atol(-1e-8, 2)
+end

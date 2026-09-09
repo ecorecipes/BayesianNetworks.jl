@@ -75,7 +75,7 @@ export BayesNetError, UnknownVariableError, UnknownMechanismError, CyclicBayesNe
        PositionError, DuplicateStateError, SelfInputError, DuplicateNameError,
        FormatError, InterfaceError, InterfaceMismatchError, UnknownStateError,
        NameClashError, NoEvidenceError, MissingKernelError, KernelBindingError,
-       UnnormalizedKernelError,
+       UnnormalizedKernelError, ProofCertificateError, OpenCertificateError,
        ImpossibleEvidenceError, ModelTooLargeError, UnsupportedNodeKindError,
        WiringDiagramError, DynamicTemplateError, HorizonError, NotUnrolledError
 # construction.jl
@@ -111,6 +111,8 @@ export observe, unobserve, do_intervention, soft_intervention, intervened_variab
 # semantics.jl
 export axis, syntax_space, syntax_spaces, space, parent_space, bind_kernel, bind_cpt,
        kernel, missing_kernels, has_semantics, semantic_errors, rename_variable
+# certificates.jl
+export proof_certificate
 # evaluation.jl
 export joint_distribution, JointTable, joint_table, conditional, sample,
        empirical_marginal
@@ -144,6 +146,7 @@ include("examples.jl")
 include("model.jl")
 include("interventions.jl")
 include("semantics.jl")
+include("certificates.jl")
 include("modelcard.jl")
 include("serialization.jl")
 include("evaluation.jl")

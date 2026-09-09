@@ -104,6 +104,15 @@ parse_json_card
 read_json_card
 ```
 
+## Exact finite-model certificates
+
+See [Finite-model proof certificates](certificates.md) for the data format and
+the distinction between exact normalization and runtime tolerance.
+
+```@docs
+proof_certificate
+```
+
 ## Reporting: model cards and provenance
 
 The reporting record that travels with a model (SPEC section 49; the ecology
@@ -319,6 +328,8 @@ NoEvidenceError
 MissingKernelError
 KernelBindingError
 UnnormalizedKernelError
+ProofCertificateError
+OpenCertificateError
 ImpossibleEvidenceError
 ModelTooLargeError
 UnsupportedNodeKindError

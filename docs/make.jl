@@ -27,7 +27,8 @@ function tutorial_pages()
     end
 end
 
-pages = Any["Home" => "index.md", "API Reference" => "api.md",
+pages = Any["Home" => "index.md", "Proof certificates" => "certificates.md",
+            "API Reference" => "api.md",
             "References" => "references.md"]
 tutorials = tutorial_pages()
 isempty(tutorials) || push!(pages, "Tutorials" => tutorials)
@@ -57,10 +58,10 @@ makedocs(;
                                 # The generated API page is over Documenter's 200 KiB
                                 # example-size limit (this package exports the most names);
                                 # it is a reference page, not an example gallery.
-                                size_threshold_ignore=["api.md"],),
+                                size_threshold_ignore=["api.md"]),
          pages=pages,
-         plugins=[bib],)
+         plugins=[bib])
 
 deploydocs(;
            repo="github.com/ecorecipes/BayesianNetworks.jl.git",
-           devbranch="main",)
+           devbranch="main")

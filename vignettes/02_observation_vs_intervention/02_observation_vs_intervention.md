@@ -7,6 +7,8 @@ Simon Frost
 - [A fork](#a-fork)
 - [What the intervention does to the
   network](#what-the-intervention-does-to-the-network)
+- [Downstream agreement needs a screening-off
+  condition](#downstream-agreement-needs-a-screening-off-condition)
 - [Soft interventions](#soft-interventions)
 - [Provenance](#provenance)
 - [Summary](#summary)
@@ -191,6 +193,33 @@ to_graphviz(mdo)
 
 ![](02_observation_vs_intervention_files/figure-commonmark/cell-15-output-1.svg)
 
+## Downstream agreement needs a screening-off condition
+
+The previous example does not establish that observation and
+intervention always agree downstream. An unobserved common cause can
+also affect a downstream target through a path that bypasses the
+manipulated variable:
+
+``` julia
+confounded = bayesnet(:U => [:no, :yes], :X => [:no, :yes], :Y => [:no, :yes];
+                     mechanisms = [:X => :U, :Y => (:U, :X)])
+response = zeros(2, 2, 2)
+for u in 1:2, x in 1:2
+    response[u, x, u == 2 && x == 2 ? 2 : 1] = 1.0
+end
+cm = bind_cpt(BayesModel(confounded),
+              [:U => [0.5, 0.5], :X => [1.0 0.0; 0.0 1.0], :Y => response])
+(observed = marginal(observe(cm, :X => :yes), :Y).table,
+ intervened = marginal(do_intervention(cm, :X => :yes), :Y).table)
+```
+
+    (observed = [0.0, 1.0], intervened = [0.5, 0.5])
+
+Observing `X=yes` also reveals `U=yes`, giving `P(Y=yes)=1`. Setting
+`X=yes` does not reveal or change `U`, giving `P(Y=yes)=0.5`. The edge
+`X -> Y` is present in both models: being downstream does not remove
+confounding.
+
 ## Soft interventions
 
 A soft intervention replaces a mechanism by another one, with a chosen
@@ -264,12 +293,12 @@ provenance travels with the model (see the serialisation vignette).
 
 Observation is a fact about the semantics and leaves the syntax alone;
 intervention is an edit of the syntax, deleting one mechanism and
-putting a constant in its place, so the two agree downstream of the
-manipulated variable and disagree upstream of it. Soft interventions
-replace a mechanism by another one rather than by a constant, and every
-rewrite is recorded in the model’s history, so an intervened model can
-say what was done to it. The next vignette, [Serialisation, provenance
-and CatColab
+putting a constant in its place, so their downstream answers agree only
+when the relevant screening-off/no-confounding conditions hold, and can
+otherwise differ there as well as upstream. Soft interventions replace a
+mechanism by another one rather than by a constant, and every rewrite is
+recorded in the model’s history, so an intervened model can say what was
+done to it. The next vignette, [Serialisation, provenance and CatColab
 export](../03_serialization_and_provenance/03_serialization_and_provenance.md),
 writes these models to files and reads them back. Taking networks apart
 instead of editing them in place is the subject of

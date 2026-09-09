@@ -5,6 +5,8 @@ Simon Frost
 - [Setup](#setup)
 - [The template](#the-template)
 - [Unrolling](#unrolling)
+- [A lag-three boundary is three initial
+  slices](#a-lag-three-boundary-is-three-initial-slices)
 - [Unrolling is gluing](#unrolling-is-gluing)
 - [Semantics](#semantics)
 - [Forward marginals](#forward-marginals)
@@ -136,6 +138,44 @@ slice_variables(u, 2), horizon(u)
 ```
 
     ([:Vegetation_2, :Herbivores_2], 3)
+
+## A lag-three boundary is three initial slices
+
+For maximal lag three, the initial network supplies slices 0, 1 and 2
+jointly. Its lag notation is relative to slice 2: `X[t-2]`, `X[t-1]` and
+`X` become `X_0`, `X_1` and `X_2`. They need not have the same initial
+distribution.
+
+``` julia
+initial3 = bayesnet(lagged(:X, 2) => [:no, :yes],
+                   lagged(:X, 1) => [:no, :yes], :X => [:no, :yes])
+transition3 = bayesnet(:X => [:no, :yes], lagged(:X, 3) => [:no, :yes];
+                      mechanisms = [:X => lagged(:X, 3)], closed = false)
+dm3 = DynamicBayesModel(DynamicBayesNet(initial3, transition3))
+dm3 = bind_cpt(dm3, [lagged(:X, 2) => [0.9, 0.1],
+                    lagged(:X, 1) => [0.5, 0.5], :X => [0.2, 0.8]]; slice = :initial)
+dm3 = bind_cpt(dm3, :X => [0.8 0.2; 0.1 0.9])
+u3 = unroll(dm3, 5)
+[(slice = t,
+  parents = variable_name.(Ref(syntax(u3)), parents(syntax(u3), variable_at(:X, t))),
+  probability_yes = round(marginal(u3, variable_at(:X, t)).table[2]; digits = 4))
+ for t in 0:5]
+```
+
+    6-element Vector{NamedTuple{(:slice, :parents, :probability_yes)}}:
+     (slice = 0, parents = Any[], probability_yes = 0.1)
+     (slice = 1, parents = Any[], probability_yes = 0.5)
+     (slice = 2, parents = Any[], probability_yes = 0.8)
+     (slice = 3, parents = [:X_0], probability_yes = 0.27)
+     (slice = 4, parents = [:X_1], probability_yes = 0.55)
+     (slice = 5, parents = [:X_2], probability_yes = 0.76)
+
+The first transition is at slice 3, reading slice 0, not an invented
+negative slice or a repeated copy of the slice-2 initial state. Since
+the transition sends a probability `p` to `0.2 + 0.7p`, slices 3, 4 and
+5 have probabilities 0.27, 0.55 and 0.76. Dropping the missing lag or
+reusing one initial marginal for all three slices would change those
+numbers.
 
 ## Unrolling is gluing
 
@@ -279,7 +319,7 @@ end
 to_graphviz(umi; rankdir = "LR", states = false)
 ```
 
-![](04_dynamic_networks_files/figure-commonmark/cell-18-output-1.svg)
+![](04_dynamic_networks_files/figure-commonmark/cell-19-output-1.svg)
 
 Observation of the same event, by contrast, also moves the earlier
 slices:

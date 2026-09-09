@@ -67,6 +67,11 @@ Semantic layer:
 
 Views and export:
 
+- `proof_certificate` emits exact rational finite-model data for the separate
+  Lean literal-certificate consumer, preserving raw row order, repeated parent
+  slots, reference identities and evidence. See the
+  [certificate guide](docs/src/certificates.md); runtime tolerance is not exact
+  rational normalization, and checking data does not verify the Julia runtime.
 - Graphviz drawings with `to_graphviz` (the DAG of a network or model, with evidence,
   interventions and states marked), built as a DOT syntax tree by the package's own
   `Graphviz` submodule and rendered to SVG through Graphviz_jll -- no Catlab needed to draw
@@ -109,18 +114,59 @@ Reporting:
 - Proposition 3 is proved in split form, `marg (S ∪ T) ⟦B ∘ A⟧ = marg S (⟦A⟧ · marg T ⟦B⟧)`
   (`marg_joint_compose_split`), which is its mathematical content; `joint_compose`,
   `marg_joint_compose`, `local_compose`, `normalised_compose`, `closed_compose` and
-  `sum_joint_compose_eq_one` come with it. The one remaining `sorry` in the project restates it
-  with each side's marginal written as that side's own open semantics (`osem_compose` in
-  `Roadmap.lean`, outside the default build target); it is two book-keeping steps -- a
-  pushout-leg transfer lemma and the identification of the composite's hidden variables.
-- All of this is about an abstract finite model, `FinBayesNet` / `OpenFinBayesNet`: finite types
-  of variables and mechanisms, an *unordered* `Finset` of parents per mechanism, kernels as
-  functions, feet as subsets of the apex rather than objects with a leg. These are not theorems
-  about the ACSet objects in `src/` -- the ordered `Input` rows, the attributes and `KernelRef`
-  are erased, and the correspondence with `BayesNet` / `BayesModel` is documentation, not a
-  proof.
-- Not proved: that open networks form a symmetric monoidal category with copy/discard on feet.
-  That claim rests on the Julia test suite.
+  `sum_joint_compose_eq_one` come with it. The own-variable statement `osem_compose` is
+  now proved in `Finite/OpenSemantics.lean`, with its original hypotheses. The stronger
+  `osem_compose_glue` drops locality, normalisation and match surjectivity, but still
+  requires disjoint input/output sets on both networks. Every B input is matched into
+  A's outputs; unused A outputs are retained. General pass-through composition and
+  arbitrary two-sided partial gluing are not covered by that formula.
+- `Finite/OrderedParents.lean` proves an exact positional-CPT/local-kernel equivalence
+  and coherent parent-axis reindexing for a supplied duplicate-free parent ordering.
+  `Finite/VariableElimination.lean` implements scoped finite-function bucket elimination
+  and proves agreement with the existing joint marginal, including compilation of local
+  mechanisms and independence of a duplicate-free elimination order.
+- `Finite/RawRecords.lean` and `Finite/ReferenceTables.lean` now check finite
+  variable/state/mechanism/input records, derive positional bijections and topological
+  order, retain attributes and resolve named, policy and point-mass references.
+  Repeated input slots compile diagonally; complete raw CPT columns, ordered labels,
+  nonnegative rational weights and exact normalization are checked separately.
+  `proof_certificate(m)` supplies that data interface without changing bound numbers.
+- `Finite/Assignments.lean` and `Finite/Posterior.lean` prove explicit
+  clamping/dropping of evidence equivalent to indicator-factor elimination, and VE
+  numerator/normalized-posterior correctness. Distributions live on retained
+  assignments, and zero global mass is rejected even for empty or observed queries.
+  Julia's empty `infer` query is instead an unnormalized evidence-mass API.
+- `Finite/JunctionTree.lean` defines actual cached Shafer-Shenoy collect/distribute
+  passes and proves clique/query agreement with VE and the joint posterior.
+  Hypotheses are structural running intersection, complete factor assignment and
+  variable coverage, not precomputed correct messages. Binary grafting represents
+  arbitrary branching and empty-separator roots represent disconnected forests.
+- `Finite/DSeparation.lean` proves the moralized-ancestral **graph path**
+  criterion implies the conditional-independence event identity. With normalized
+  nonnegative local kernels this has its probability interpretation; conditioning
+  is divided out only at positive mass. `Finite/NumericalContracts.lean` supplies
+  input-perturbation and posterior L1 bounds with an explicit evidence-mass floor,
+  plus a rounded-product bound conditional on local arithmetic contracts.
+- These are exact finite-model/data results, not verification of Julia execution.
+  In particular, the new raw-record compiler feeds the existing `FinBayesNet`
+  reduct, whose parent sets erase slot multiplicity only after diagonal evaluation.
+  Full ACSet/JSON/array translation, CliqueTrees construction and IEEE arithmetic
+  remain separate. Formal forest beliefs include outside-component scalar masses;
+  Julia stores component-local beliefs and checks global mass separately. Their
+  raw arrays must not be identified without that scaling relationship.
+- The general category is now constructed in `CategoricalBayesianNetworks.jl/proofs/`
+  (ADR 0010): explicit arbitrary output legs, ordered repeated slots, structural
+  isomorphism, pushout gluing and Mathlib category/monoidal/symmetric/copy-discard
+  instances. The old subset-foot cardinality obstruction explains why it needs a
+  richer representation. That project also supplies the general exact FinStoch
+  interpretation as a strong braided monoidal functor. The complete Julia/ACSet
+  runtime refinement remains separate.
+- `InfluenceDiagrams.jl/proofs/InfluenceDiagramsProofs/Finite/DVE/` proves a checked exact finite-function
+  DVE algorithm, including generated no-forgetting schedules, policy reconstruction,
+  global optimality and all-row diagnostic completeness. This is not a proof of
+  literal floating-point backend/oracle equality.
+- No default or compatibility Roadmap target contains a `sorry`. Headline results are
+  included in `Audit.lean`, whose dependencies are only the three axioms listed above.
 - The schemas are *checked to agree*, as described above. Neither the Lean `SchemaDesc` terms
   nor the Julia `BasicSchema` declarations are generated from the other, so neither is a source
   of truth for the other.

@@ -12,6 +12,7 @@ using BayesianNetworks
     include("test_serialization.jl")
     include("test_interventions.jl")
     include("test_semantics.jl")
+    include("test_certificates.jl")
     include("test_evaluation.jl")
     include("test_causal.jl")
     include("test_properties.jl")

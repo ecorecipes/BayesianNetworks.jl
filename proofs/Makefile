@@ -14,9 +14,9 @@ build:
 
 # Print the axioms used by every main theorem (only propext/Quot.sound/Classical.choice expected)
 audit:
-	lake env lean Audit.lean
+	python3 scripts/audit.py
 
-# Build the deferred statements (may contain sorry); not part of `build` or `audit`
+# Build the remaining-work module; currently contains no unproved declarations
 roadmap:
 	lake build $(LIB).Roadmap
 
@@ -33,10 +33,15 @@ check-schema:
 # Requires pandoc and a TeX distribution with lualatex (TinyTeX or MacTeX); built locally, not
 # in CI. Fonts: STIX Two Text/Math (system or TeX Live) and JuliaMono from ../../fonts/JuliaMono.
 
-# Modules in import (dependency) order, as in $(LIB).lean; Roadmap.lean (contains sorry) last.
+# Modules in import (dependency) order, as in $(LIB).lean; Roadmap.lean last.
 MD_FILES = \
     Basic.md Schema/Desc.md Schema/BayesNet.md Finite/BayesNet.md Finite/Evaluation.md \
-    Finite/Intervention.md Finite/Tensor.md Finite/Open.md Markov/Basic.md Finite/Probability.md \
+    Finite/OrderedParents.md Finite/VariableElimination.md \
+    Finite/Intervention.md Finite/Tensor.md Finite/Open.md Finite/OpenSemantics.md \
+    Finite/BoundaryCases.md Markov/Basic.md Finite/Probability.md \
+    Finite/Assignments.md Finite/Posterior.md Finite/RawRecords.md Finite/ReferenceTables.md \
+    Finite/FactorMarginal.md Finite/JunctionTree.md Finite/ConditionalIndependence.md \
+    Finite/DSeparation.md Finite/NumericalContracts.md Finite/RefinementExamples.md \
     Roadmap.md
 
 JULIAMONO_DIR = $(abspath ../../fonts/JuliaMono)/

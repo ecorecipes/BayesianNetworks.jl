@@ -2231,6 +2231,7 @@ vertical-align: -.125em;
   <li><a href="#setup" id="toc-setup" class="nav-link" data-scroll-target="#setup">Setup</a></li>
   <li><a href="#the-template" id="toc-the-template" class="nav-link" data-scroll-target="#the-template">The template</a></li>
   <li><a href="#unrolling" id="toc-unrolling" class="nav-link" data-scroll-target="#unrolling">Unrolling</a></li>
+  <li><a href="#a-lag-three-boundary-is-three-initial-slices" id="toc-a-lag-three-boundary-is-three-initial-slices" class="nav-link" data-scroll-target="#a-lag-three-boundary-is-three-initial-slices">A lag-three boundary is three initial slices</a></li>
   <li><a href="#unrolling-is-gluing" id="toc-unrolling-is-gluing" class="nav-link" data-scroll-target="#unrolling-is-gluing">Unrolling is gluing</a></li>
   <li><a href="#semantics" id="toc-semantics" class="nav-link" data-scroll-target="#semantics">Semantics</a></li>
   <li><a href="#forward-marginals" id="toc-forward-marginals" class="nav-link" data-scroll-target="#forward-marginals">Forward marginals</a></li>
@@ -2363,11 +2364,40 @@ vertical-align: -.125em;
 </div>
 </div>
 </section>
+<section id="a-lag-three-boundary-is-three-initial-slices" class="level2">
+<h2 class="anchored" data-anchor-id="a-lag-three-boundary-is-three-initial-slices">A lag-three boundary is three initial slices</h2>
+<p>For maximal lag three, the initial network supplies slices 0, 1 and 2 jointly. Its lag notation is relative to slice 2: <code>X[t-2]</code>, <code>X[t-1]</code> and <code>X</code> become <code>X_0</code>, <code>X_1</code> and <code>X_2</code>. They need not have the same initial distribution.</p>
+<div id="18" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>initial3 <span class="op">=</span> <span class="fu">bayesnet</span>(<span class="fu">lagged</span>(<span class="op">:</span>X, <span class="fl">2</span>) <span class="op">=&gt;</span> [<span class="op">:</span>no, <span class="op">:</span>yes],</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">lagged</span>(<span class="op">:</span>X, <span class="fl">1</span>) <span class="op">=&gt;</span> [<span class="op">:</span>no, <span class="op">:</span>yes], <span class="op">:</span>X <span class="op">=&gt;</span> [<span class="op">:</span>no, <span class="op">:</span>yes])</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>transition3 <span class="op">=</span> <span class="fu">bayesnet</span>(<span class="op">:</span>X <span class="op">=&gt;</span> [<span class="op">:</span>no, <span class="op">:</span>yes], <span class="fu">lagged</span>(<span class="op">:</span>X, <span class="fl">3</span>) <span class="op">=&gt;</span> [<span class="op">:</span>no, <span class="op">:</span>yes];</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>                      mechanisms <span class="op">=</span> [<span class="op">:</span>X <span class="op">=&gt;</span> <span class="fu">lagged</span>(<span class="op">:</span>X, <span class="fl">3</span>)], closed <span class="op">=</span> <span class="cn">false</span>)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>dm3 <span class="op">=</span> <span class="fu">DynamicBayesModel</span>(<span class="fu">DynamicBayesNet</span>(initial3, transition3))</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>dm3 <span class="op">=</span> <span class="fu">bind_cpt</span>(dm3, [<span class="fu">lagged</span>(<span class="op">:</span>X, <span class="fl">2</span>) <span class="op">=&gt;</span> [<span class="fl">0.9</span>, <span class="fl">0.1</span>],</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>                    <span class="fu">lagged</span>(<span class="op">:</span>X, <span class="fl">1</span>) <span class="op">=&gt;</span> [<span class="fl">0.5</span>, <span class="fl">0.5</span>], <span class="op">:</span>X <span class="op">=&gt;</span> [<span class="fl">0.2</span>, <span class="fl">0.8</span>]]; slice <span class="op">=</span> <span class="op">:</span>initial)</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>dm3 <span class="op">=</span> <span class="fu">bind_cpt</span>(dm3, <span class="op">:</span>X <span class="op">=&gt;</span> [<span class="fl">0.8</span> <span class="fl">0.2</span>; <span class="fl">0.1</span> <span class="fl">0.9</span>])</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>u3 <span class="op">=</span> <span class="fu">unroll</span>(dm3, <span class="fl">5</span>)</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>[(slice <span class="op">=</span> t,</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  parents <span class="op">=</span> <span class="fu">variable_name</span>.(<span class="fu">Ref</span>(<span class="fu">syntax</span>(u3)), <span class="fu">parents</span>(<span class="fu">syntax</span>(u3), <span class="fu">variable_at</span>(<span class="op">:</span>X, t))),</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>  probability_yes <span class="op">=</span> <span class="fu">round</span>(<span class="fu">marginal</span>(u3, <span class="fu">variable_at</span>(<span class="op">:</span>X, t)).table[<span class="fl">2</span>]; digits <span class="op">=</span> <span class="fl">4</span>))</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a> for t <span class="kw">in</span> <span class="fl">0</span><span class="op">:</span><span class="fl">5</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>6-element Vector{NamedTuple{(:slice, :parents, :probability_yes)}}:
+ (slice = 0, parents = Any[], probability_yes = 0.1)
+ (slice = 1, parents = Any[], probability_yes = 0.5)
+ (slice = 2, parents = Any[], probability_yes = 0.8)
+ (slice = 3, parents = [:X_0], probability_yes = 0.27)
+ (slice = 4, parents = [:X_1], probability_yes = 0.55)
+ (slice = 5, parents = [:X_2], probability_yes = 0.76)</code></pre>
+</div>
+</div>
+<p>The first transition is at slice 3, reading slice 0, not an invented negative slice or a repeated copy of the slice-2 initial state. Since the transition sends a probability <code>p</code> to <code>0.2 + 0.7p</code>, slices 3, 4 and 5 have probabilities 0.27, 0.55 and 0.76. Dropping the missing lag or reusing one initial marginal for all three slices would change those numbers.</p>
+</section>
 <section id="unrolling-is-gluing" class="level2">
 <h2 class="anchored" data-anchor-id="unrolling-is-gluing">Unrolling is gluing</h2>
 <p>The unrolled network is what the open-network machinery produces when consecutive slices are glued along the lagged variables, as structured cospans <span class="citation" data-cites="BaezCourser2020">(<a href="#ref-BaezCourser2020" role="doc-biblioref">Baez and Courser 2020</a>)</span>. <code>initial_slice</code> is the initial network renamed to slice 0 and <code>transition_slice(dbn, t)</code> the transition template seen from slice <code>t</code>, with the lagged variables exogenous.</p>
-<div id="18" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">variable_names</span>(<span class="fu">initial_slice</span>(dbn)), <span class="fu">variable_names</span>(<span class="fu">transition_slice</span>(dbn, <span class="fl">1</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="20" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">variable_names</span>(<span class="fu">initial_slice</span>(dbn)), <span class="fu">variable_names</span>(<span class="fu">transition_slice</span>(dbn, <span class="fl">1</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>([:Vegetation_0, :Herbivores_0], [:Vegetation_1, :Herbivores_1, :Vegetation_0, :Herbivores_0])</code></pre>
 </div>
@@ -2377,9 +2407,9 @@ vertical-align: -.125em;
 <section id="semantics" class="level2">
 <h2 class="anchored" data-anchor-id="semantics">Semantics</h2>
 <p>A <code>DynamicBayesModel</code> carries a <code>BayesModel</code> for each template. Kernels are bound with <code>bind_cpt</code> (or <code>bind_kernel</code>) on the chosen <code>slice</code>; the domain axes of a transition kernel are named like the template’s inputs, lagged names included. <code>vegetation_herbivore_model()</code> binds fixed tables: vegetation recovers when herbivores are few and declines when they are many, and herbivores track vegetation.</p>
-<div id="20" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>dm <span class="op">=</span> <span class="fu">vegetation_herbivore_model</span>()</span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kernel</span>(dm, <span class="op">:</span>Vegetation)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="22" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>dm <span class="op">=</span> <span class="fu">vegetation_herbivore_model</span>()</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kernel</span>(dm, <span class="op">:</span>Vegetation)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>FiniteKernel{Float64}(Vegetation[t-1]{sparse,dense} ⊗ Herbivores[t-1]{low,high} → Vegetation{sparse,dense})
           sparse,low  dense,low  sparse,high  dense,high
@@ -2387,8 +2417,8 @@ vertical-align: -.125em;
   dense          0.5        0.9          0.2         0.6</code></pre>
 </div>
 </div>
-<div id="22" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>.(<span class="fu">kernel</span>(dm, <span class="op">:</span>Vegetation).table; digits <span class="op">=</span> <span class="fl">2</span>)   <span class="co"># outputs-first: (Vegetation, Vegetation[t-1], Herbivores[t-1])</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="24" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>.(<span class="fu">kernel</span>(dm, <span class="op">:</span>Vegetation).table; digits <span class="op">=</span> <span class="fl">2</span>)   <span class="co"># outputs-first: (Vegetation, Vegetation[t-1], Herbivores[t-1])</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>2×2×2 Array{Float64, 3}:
 [:, :, 1] =
@@ -2401,10 +2431,10 @@ vertical-align: -.125em;
 </div>
 </div>
 <p><code>unroll</code> on the model copies the kernels into every slice, renaming their axes, so the result is an ordinary model with semantics.</p>
-<div id="24" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>um <span class="op">=</span> <span class="fu">unroll</span>(dm, <span class="fl">3</span>)</span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">validate</span>(um; closed <span class="op">=</span> <span class="cn">true</span>, unique_names <span class="op">=</span> <span class="cn">true</span>, semantics <span class="op">=</span> <span class="cn">true</span>)</span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(<span class="fu">kernel</span>(um, <span class="op">:</span>Vegetation_2).dom)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="26" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>um <span class="op">=</span> <span class="fu">unroll</span>(dm, <span class="fl">3</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="fu">validate</span>(um; closed <span class="op">=</span> <span class="cn">true</span>, unique_names <span class="op">=</span> <span class="cn">true</span>, semantics <span class="op">=</span> <span class="cn">true</span>)</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(<span class="fu">kernel</span>(um, <span class="op">:</span>Vegetation_2).dom)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>2-element Vector{Symbol}:
  :Vegetation_1
@@ -2415,15 +2445,15 @@ vertical-align: -.125em;
 <section id="forward-marginals" class="level2">
 <h2 class="anchored" data-anchor-id="forward-marginals">Forward marginals</h2>
 <p><code>rollout</code> returns the marginal of a variable in every slice (brute force through <code>marginal</code>, fine for short horizons); <code>filter_marginal</code> asks for one slice, given the model’s evidence.</p>
-<div id="26" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>rv <span class="op">=</span> <span class="fu">rollout</span>(um, <span class="op">:</span>Vegetation)</span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>rh <span class="op">=</span> <span class="fu">rollout</span>(um, <span class="op">:</span>Herbivores)</span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="fu">fmt</span>(x) <span class="op">=</span> <span class="fu">lpad</span>(<span class="fu">string</span>(<span class="fu">round</span>(x; digits <span class="op">=</span> <span class="fl">4</span>)), <span class="fl">8</span>)</span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="fu">println</span>(<span class="st">&quot; t   P(Vegetation = dense)   P(Herbivores = high)&quot;</span>)</span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> t <span class="kw">in</span> <span class="fl">0</span><span class="op">:</span><span class="fu">horizon</span>(<span class="fu">syntax</span>(um))</span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">println</span>(<span class="fu">lpad</span>(t, <span class="fl">2</span>), <span class="st">&quot;   &quot;</span>, <span class="fu">lpad</span>(<span class="fu">fmt</span>(rv[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]), <span class="fl">21</span>), <span class="st">&quot;   &quot;</span>,</span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>            <span class="fu">lpad</span>(<span class="fu">fmt</span>(rh[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]), <span class="fl">20</span>))</span>
-<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="28" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>rv <span class="op">=</span> <span class="fu">rollout</span>(um, <span class="op">:</span>Vegetation)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>rh <span class="op">=</span> <span class="fu">rollout</span>(um, <span class="op">:</span>Herbivores)</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="fu">fmt</span>(x) <span class="op">=</span> <span class="fu">lpad</span>(<span class="fu">string</span>(<span class="fu">round</span>(x; digits <span class="op">=</span> <span class="fl">4</span>)), <span class="fl">8</span>)</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a><span class="fu">println</span>(<span class="st">&quot; t   P(Vegetation = dense)   P(Herbivores = high)&quot;</span>)</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> t <span class="kw">in</span> <span class="fl">0</span><span class="op">:</span><span class="fu">horizon</span>(<span class="fu">syntax</span>(um))</span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">println</span>(<span class="fu">lpad</span>(t, <span class="fl">2</span>), <span class="st">&quot;   &quot;</span>, <span class="fu">lpad</span>(<span class="fu">fmt</span>(rv[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]), <span class="fl">21</span>), <span class="st">&quot;   &quot;</span>,</span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>            <span class="fu">lpad</span>(<span class="fu">fmt</span>(rh[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]), <span class="fl">20</span>))</span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code> t   P(Vegetation = dense)   P(Herbivores = high)
  0                     0.6                   0.54
@@ -2433,19 +2463,19 @@ vertical-align: -.125em;
 </div>
 </div>
 <p>The same numbers follow from the forward recursion of the two-variable chain: the joint of <code>(Vegetation_t, Herbivores_t)</code> composed with the transition kernel gives the next vegetation marginal. Kernels compose, so this is one line.</p>
-<div id="28" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>J0 <span class="op">=</span> <span class="fu">marginal</span>(um, [<span class="op">:</span>Vegetation_0, <span class="op">:</span>Herbivores_0])</span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>T <span class="op">=</span> <span class="fu">kernel</span>(um, <span class="op">:</span>Vegetation_1)</span>
-<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="fu">compose_kernel</span>(J0, T).table <span class="op">≈</span> rv[<span class="fl">2</span>].table</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="30" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>J0 <span class="op">=</span> <span class="fu">marginal</span>(um, [<span class="op">:</span>Vegetation_0, <span class="op">:</span>Herbivores_0])</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>T <span class="op">=</span> <span class="fu">kernel</span>(um, <span class="op">:</span>Vegetation_1)</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="fu">compose_kernel</span>(J0, T).table <span class="op">≈</span> rv[<span class="fl">2</span>].table</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>true</code></pre>
 </div>
 </div>
 <p>Evidence in one slice propagates both forwards (filtering) and backwards (smoothing):</p>
-<div id="30" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>ume <span class="op">=</span> <span class="fu">observe</span>(um, <span class="op">:</span>Herbivores_1 <span class="op">=&gt;</span> <span class="op">:</span>high)</span>
-<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>(<span class="fu">round</span>.(<span class="fu">filter_marginal</span>(ume, <span class="op">:</span>Vegetation, <span class="fl">2</span>).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
-<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a> <span class="fu">round</span>.(<span class="fu">filter_marginal</span>(ume, <span class="op">:</span>Vegetation, <span class="fl">0</span>).table; digits <span class="op">=</span> <span class="fl">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="32" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>ume <span class="op">=</span> <span class="fu">observe</span>(um, <span class="op">:</span>Herbivores_1 <span class="op">=&gt;</span> <span class="op">:</span>high)</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>(<span class="fu">round</span>.(<span class="fu">filter_marginal</span>(ume, <span class="op">:</span>Vegetation, <span class="fl">2</span>).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a> <span class="fu">round</span>.(<span class="fu">filter_marginal</span>(ume, <span class="op">:</span>Vegetation, <span class="fl">0</span>).table; digits <span class="op">=</span> <span class="fl">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>([0.4953, 0.5047], [0.3494, 0.6506])</code></pre>
 </div>
@@ -2455,13 +2485,13 @@ vertical-align: -.125em;
 <section id="intervening-in-one-slice" class="level2">
 <h2 class="anchored" data-anchor-id="intervening-in-one-slice">Intervening in one slice</h2>
 <p>An intervention on <code>Herbivores_2</code> is a local rewrite of the unrolled network: the mechanism of that one variable is replaced by a point mass. Earlier slices are untouched and later ones respond.</p>
-<div id="32" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>umi <span class="op">=</span> <span class="fu">do_intervention</span>(um, <span class="op">:</span>Herbivores_2 <span class="op">=&gt;</span> <span class="op">:</span>high)</span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>rvi <span class="op">=</span> <span class="fu">rollout</span>(umi, <span class="op">:</span>Vegetation)</span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="fu">println</span>(<span class="st">&quot; t   P(dense)   P(dense | do(Herbivores_2 = high))&quot;</span>)</span>
-<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> t <span class="kw">in</span> <span class="fl">0</span><span class="op">:</span><span class="fl">3</span></span>
-<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">println</span>(<span class="fu">lpad</span>(t, <span class="fl">2</span>), <span class="st">&quot;   &quot;</span>, <span class="fu">fmt</span>(rv[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]), <span class="st">&quot;   &quot;</span>, <span class="fu">fmt</span>(rvi[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]))</span>
-<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="34" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>umi <span class="op">=</span> <span class="fu">do_intervention</span>(um, <span class="op">:</span>Herbivores_2 <span class="op">=&gt;</span> <span class="op">:</span>high)</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>rvi <span class="op">=</span> <span class="fu">rollout</span>(umi, <span class="op">:</span>Vegetation)</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="fu">println</span>(<span class="st">&quot; t   P(dense)   P(dense | do(Herbivores_2 = high))&quot;</span>)</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> t <span class="kw">in</span> <span class="fl">0</span><span class="op">:</span><span class="fl">3</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">println</span>(<span class="fu">lpad</span>(t, <span class="fl">2</span>), <span class="st">&quot;   &quot;</span>, <span class="fu">fmt</span>(rv[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]), <span class="st">&quot;   &quot;</span>, <span class="fu">fmt</span>(rvi[t <span class="op">+</span> <span class="fl">1</span>].table[<span class="fl">2</span>]))</span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code> t   P(dense)   P(dense | do(Herbivores_2 = high))
  0        0.6        0.6
@@ -2470,8 +2500,8 @@ vertical-align: -.125em;
  3     0.5701     0.4287</code></pre>
 </div>
 </div>
-<div id="34" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">to_graphviz</span>(umi; rankdir <span class="op">=</span> <span class="st">&quot;LR&quot;</span>, states <span class="op">=</span> <span class="cn">false</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="36" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">to_graphviz</span>(umi; rankdir <span class="op">=</span> <span class="st">&quot;LR&quot;</span>, states <span class="op">=</span> <span class="cn">false</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <div>
 <figure class="figure">
@@ -2481,9 +2511,9 @@ vertical-align: -.125em;
 </div>
 </div>
 <p>Observation of the same event, by contrast, also moves the earlier slices:</p>
-<div id="36" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>rvo <span class="op">=</span> <span class="fu">rollout</span>(<span class="fu">observe</span>(um, <span class="op">:</span>Herbivores_2 <span class="op">=&gt;</span> <span class="op">:</span>high), <span class="op">:</span>Vegetation)</span>
-<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>.([k.table[<span class="fl">2</span>] for k <span class="kw">in</span> rvo]; digits <span class="op">=</span> <span class="fl">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="38" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>rvo <span class="op">=</span> <span class="fu">rollout</span>(<span class="fu">observe</span>(um, <span class="op">:</span>Herbivores_2 <span class="op">=&gt;</span> <span class="op">:</span>high), <span class="op">:</span>Vegetation)</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>.([k.table[<span class="fl">2</span>] for k <span class="kw">in</span> rvo]; digits <span class="op">=</span> <span class="fl">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>4-element Vector{Float64}:
  0.6142
@@ -2496,11 +2526,11 @@ vertical-align: -.125em;
 <section id="management-as-an-exogenous-input" class="level2">
 <h2 class="anchored" data-anchor-id="management-as-an-exogenous-input">Management as an exogenous input</h2>
 <p><code>vegetation_herbivore_dbn(management = true)</code> adds an exogenous <code>Management</code> variable (<code>none</code>, <code>cull</code>) to every slice, feeding the herbivore mechanism. Setting it in one slice by evidence or intervention gives the same downstream effect, because it has no parents.</p>
-<div id="38" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>umm <span class="op">=</span> <span class="fu">unroll</span>(<span class="fu">vegetation_herbivore_model</span>(management <span class="op">=</span> <span class="cn">true</span>), <span class="fl">3</span>)</span>
-<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>(<span class="fu">round</span>.(<span class="fu">marginal</span>(umm, <span class="op">:</span>Vegetation_3).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
-<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a> <span class="fu">round</span>.(<span class="fu">marginal</span>(umm, <span class="op">:</span>Vegetation_3; evidence <span class="op">=</span> <span class="fu">Dict</span>(<span class="op">:</span>Management_2 <span class="op">=&gt;</span> <span class="op">:</span>cull)).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
-<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a> <span class="fu">round</span>.(<span class="fu">marginal</span>(<span class="fu">do_intervention</span>(umm, <span class="op">:</span>Management_2 <span class="op">=&gt;</span> <span class="op">:</span>cull), <span class="op">:</span>Vegetation_3).table; digits <span class="op">=</span> <span class="fl">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="40" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>umm <span class="op">=</span> <span class="fu">unroll</span>(<span class="fu">vegetation_herbivore_model</span>(management <span class="op">=</span> <span class="cn">true</span>), <span class="fl">3</span>)</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>(<span class="fu">round</span>.(<span class="fu">marginal</span>(umm, <span class="op">:</span>Vegetation_3).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a> <span class="fu">round</span>.(<span class="fu">marginal</span>(umm, <span class="op">:</span>Vegetation_3; evidence <span class="op">=</span> <span class="fu">Dict</span>(<span class="op">:</span>Management_2 <span class="op">=&gt;</span> <span class="op">:</span>cull)).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a> <span class="fu">round</span>.(<span class="fu">marginal</span>(<span class="fu">do_intervention</span>(umm, <span class="op">:</span>Management_2 <span class="op">=&gt;</span> <span class="op">:</span>cull), <span class="op">:</span>Vegetation_3).table; digits <span class="op">=</span> <span class="fl">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>([0.4088, 0.5912], [0.3466, 0.6534], [0.3466, 0.6534])</code></pre>
 </div>

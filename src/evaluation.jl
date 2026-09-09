@@ -62,9 +62,14 @@ function _factors(bn::AbstractBayesNet, lookup, pos::AbstractDict{Int,Int};
     return out
 end
 
-# The tolerance of a product of `n` kernels each normalised within `atol`: the
-# deviations compound, to first order, linearly in the number of factors.
-_joint_atol(atol::Real, n::Integer) = atol <= DEFAULT_ATOL ? atol : atol * max(n, 1)
+# For nonnegative kernels, row-mass deviations compound multiplicatively.
+# log1p/expm1 retain the higher-order terms even for small validation tolerances.
+function _joint_atol(atol::Real, n::Integer)
+    isfinite(atol) && atol >= 0 ||
+        throw(ArgumentError("atol must be finite and nonnegative, got $atol"))
+    n >= 0 || throw(ArgumentError("the number of kernels must be nonnegative, got $n"))
+    return max(atol, expm1(n * log1p(atol)))
+end
 
 # The product of every factor's entry at the joint assignment `ci`, stopping at the
 # first zero.
@@ -142,10 +147,9 @@ function joint_distribution(m::BayesModel; variables=nothing,
     for ci in CartesianIndices(dims)
         T[ci] = _product(factors, ci)
     end
-    # The product of kernels that are normalised within `atol` is normalised within
-    # roughly the same tolerance, so the result is checked with it too.
+    # Validation tolerance compounds once per mechanism, not once per boundary port.
     return FiniteKernel(FiniteSpace(), FiniteSpace(FiniteAxis[axis(bn, v) for v in ids]),
-                        T; atol=_joint_atol(atol, length(ids)))
+                        T; atol=_joint_atol(atol, length(factors)))
 end
 
 """

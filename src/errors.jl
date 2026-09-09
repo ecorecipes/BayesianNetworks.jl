@@ -369,6 +369,43 @@ struct UnnormalizedKernelError <: BayesNetError
 end
 
 """
+    ProofCertificateError(what, part, id, name, message)
+
+[`proof_certificate`](@ref) cannot represent the supplied model without changing
+its data. `what` identifies the unsupported or invalid value, `part` and `id`
+locate the source record, and `name` is its label when available (`nothing` for
+model-wide options). `message` explains the failure. Ordinary structural,
+binding and evidence violations retain their existing exception types.
+"""
+struct ProofCertificateError <: BayesNetError
+    what::Symbol
+    part::Symbol
+    id::Int
+    name::Union{Nothing,Symbol}
+    message::String
+end
+
+"""
+    OpenCertificateError(what, path, name, message)
+
+A raw open-network certificate cannot represent its input without changing
+data or exceeding its versioned profile. `what` identifies the failure,
+`path` locates the record or option, and `name` is the offending variable or
+mechanism when available. Ordinary structural violations retain their
+existing exception types.
+
+Thrown by `CategoricalBayesianNetworks.export_open_certificate` and
+`export_open_operation_certificate`; the plain data exception stays here with
+the `BayesNetError` hierarchy and introduces no categorical dependency.
+"""
+struct OpenCertificateError <: BayesNetError
+    what::Symbol
+    path::String
+    name::Union{Nothing,Symbol}
+    message::String
+end
+
+"""
     ImpossibleEvidenceError(evidence)
 
 The recorded evidence has probability zero under the model, so conditioning on it is
@@ -414,6 +451,19 @@ end
 function Base.showerror(io::IO, e::UnnormalizedKernelError)
     return print(io, "UnnormalizedKernelError: the kernel of variable :", e.variable,
                  " is not normalised (maximum deviation from 1 is ", e.max_deviation, ")")
+end
+
+function Base.showerror(io::IO, e::ProofCertificateError)
+    print(io, "ProofCertificateError (", e.what, "): ", e.part)
+    e.id == 0 || print(io, " ", e.id)
+    e.name === nothing || print(io, " :", e.name)
+    return print(io, ": ", e.message)
+end
+
+function Base.showerror(io::IO, e::OpenCertificateError)
+    print(io, "OpenCertificateError (", e.what, ") at ", e.path)
+    e.name === nothing || print(io, " (", repr(e.name), ")")
+    return print(io, ": ", e.message)
 end
 
 function Base.showerror(io::IO, e::ImpossibleEvidenceError)

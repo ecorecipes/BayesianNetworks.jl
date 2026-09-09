@@ -138,9 +138,12 @@ end
     BayesModel(m::BayesModel; syntax = syntax(m), spaces = spaces(m), kernels = kernels(m),
                evidence = evidence(m), history = history(m), extras = extras(m)) -> BayesModel
 
-A copy of `m` with the given fields replaced. Dictionaries and the history are copied,
-so the result never shares mutable state with `m`; the space and kernel types are
-those of the dictionaries passed (by default those of `m`). This is how every
+A copy of `m` with the given fields replaced. The dictionaries and history vector
+are copied, but their contained values and the default syntax object are shared.
+This is structural sharing, not a deep copy: directly mutating a shared ACSet,
+kernel array or nested metadata can affect both wrappers. Package operations
+leave their arguments untouched. The space and kernel types are those of the
+dictionaries passed (by default those of `m`). This is how every
 operation of the package derives a new model from an old one, and the hook for
 wrappers built on top of `BayesModel` to do the same.
 """

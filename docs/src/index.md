@@ -92,7 +92,42 @@ marginal(observe(m, :Vegetation => :dense), :SoilMoisture)   # conditioning move
 marginal(do_intervention(m, :Vegetation => :dense), :SoilMoisture) ≈ marginal(m, :SoilMoisture)   # do does not
 ```
 
-`CategoricalBayesianNetworks.jl`'s `interpret` gives the kernel `⊗ inputs -> ⊗ outputs` of an open network, with `interpret(compose(A, B)) ≈ compose(interpret(A), interpret(B))` and likewise for `otimes` (Propositions 2 and 3). Both are checked by that package's test suite and proved in the Lean project here for the abstract finite model (`Finite/Tensor.lean`, `Finite/Open.lean`), which also proves the closure theorem: composition along a matched interface preserves the typed-interface rule, acyclicity included. Proposition 3 is proved in the split form `marg (S ∪ T) ⟦B ∘ A⟧ = marg S (⟦A⟧ · marg T ⟦B⟧)`; its restatement in terms of each side's own open semantics is the project's one remaining `sorry`.
+`CategoricalBayesianNetworks.jl`'s `interpret` gives the kernel `⊗ inputs -> ⊗ outputs` of an open network, with `interpret(compose(A, B)) ≈ compose(interpret(A), interpret(B))` and likewise for `otimes` (Propositions 2 and 3). The Lean project proves the abstract finite-model closure theorem, including acyclicity, and both the split and own-variable composition statements. `Finite/OpenSemantics.lean`'s `osem_compose_glue` retains the requirement that each network's input and output sets are disjoint. Every B input is matched into A's outputs, with unused A outputs retained; general pass-through or two-sided partial gluing is outside this formula.
+
+`Finite/OrderedParents.lean` proves a positional-CPT/local-kernel equivalence and coherent
+parent reindexing for a supplied duplicate-free order. `Finite/VariableElimination.lean`
+implements a scoped finite-function bucket algorithm and proves its agreement with the
+existing joint marginal and its elimination-order independence.
+`Finite/RawRecords.lean` and `Finite/ReferenceTables.lean` now derive the ordered
+finite-data bridge, including repeated-slot diagonal evaluation, state labels,
+reference resolution and exact normalization checks. [`proof_certificate`](@ref)
+exports the corresponding raw records and exact bound numbers; see
+[the certificate guide](certificates.md).
+
+`Finite/Posterior.lean` proves normalized posterior and evidence-preparation
+identities on partial assignments, rejecting zero global mass.
+`Finite/JunctionTree.lean` proves actual cached collect/distribute passes correct
+under structural running intersection and complete factor/variable coverage,
+including arbitrary branching and disconnected forests. `Finite/DSeparation.lean`
+derives conditional independence from paths in the moralized ancestral graph.
+These are exact finite-model results, not a Julia/CliqueTrees/array proof:
+formal forest beliefs are global, whereas Julia stores component beliefs and
+checks their global mass separately. Julia's empty `infer` query returns
+unnormalized mass, not the formal normalized empty-query distribution.
+Numerical perturbation bounds require an explicit positive evidence-mass floor
+and a sufficiently small error budget; they do not certify all IEEE operations.
+
+All default and compatibility Roadmap targets are
+`sorry`-free, with only `propext`, `Classical.choice` and `Quot.sound` in the axiom audit.
+The general boundary-map syntax category is now proved separately in
+`CategoricalBayesianNetworks.jl/proofs/`, with structural-isomorphism equality and
+coherent copy/discard. The influence-diagram proof project's
+`InfluenceDiagramsProofs/Finite/DVE/` modules prove the exact finite-function DVE
+algorithm, generated schedules, reconstructed optimum and complete
+all-row probability diagnostic. These do not verify literal Float64/array behavior.
+The categorical project now also proves the general exact FinStoch interpretation
+as a strong braided monoidal functor. Full ACSet/runtime and floating-point
+refinement remain separately identified work.
 
 ## Dynamic networks
 

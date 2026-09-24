@@ -27,3 +27,8 @@ name = "BayesianNetworksProofs"
 [[lean_exe]]
 name = "emit_schema"
 root = "Main"
+
+[[lean_lib]]
+name = "Shadows"
+srcDir = "."
+globs = ["BayesianNetworksProofs.Shadows.*"]

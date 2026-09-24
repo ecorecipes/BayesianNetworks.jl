@@ -102,7 +102,7 @@ Reporting:
 `Lean` workflow. What it establishes, and with what qualifications:
 
 - Proved, `sorry`-free, on only `propext`, `Classical.choice` and `Quot.sound`: Proposition 1
-  (the local product is a distribution and the sequential evaluator computes it), Proposition 2
+  (the local product sums to one and the sequential evaluator computes it), Proposition 2
   (tensor compositionality, `⟦A ⊗ B⟧ = ⟦A⟧ ⊗ ⟦B⟧` for the disjoint union of two networks with
   no shared feet), Proposition 3 (sequential compositionality) and Proposition 4 (hard
   intervention, truncated factorisation), together with the **open-network closure theorem**:

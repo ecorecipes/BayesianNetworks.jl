@@ -194,8 +194,7 @@ function _parse_card(c)
                      kernel_refs=Dict{Symbol,KernelRef}(Symbol(k) => _kernel_ref_from(r)
                                                         for (k, r) in _ref_field(c,
                                                                                  :kernel_refs)),
-                     provenance=Dict{Symbol,ParameterProvenance}(Symbol(k) =>
-                                                                     _parse_provenance(p)
+                     provenance=Dict{Symbol,ParameterProvenance}(Symbol(k) => _parse_provenance(p)
                                                                  for (k, p) in
                                                                      _ref_field(c,
                                                                                 :provenance)),
@@ -292,8 +291,15 @@ end
 Parse a JSON string produced by [`json_model`](@ref). The envelope is checked like
 [`parse_json_bayesnet`](@ref) ([`FormatError`](@ref)); a document without a
 `"semantics"` key yields a model with spaces built from the syntax and no kernels.
+
+`atol` is the normalisation tolerance each kernel is checked against, and must match the
+one the model was bound with: a model read from a format file is bound at the tolerance
+`read_bayesnet` used, and rounded CPTs are not renormalised, so parsing such a document
+back at the default tolerance would reject it. A kernel outside the tolerance raises
+[`FormatError`](@ref).
 """
-function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
+function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet,
+                          atol::Real=DEFAULT_ATOL)
     obj = JSON3.read(str)
     bn = _parse_envelope(obj, type)
     spaces = syntax_spaces(bn)
@@ -306,7 +312,15 @@ function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=Ba
         for k in get(sem, :kernels, [])
             dom, codom = _parse_space(k[:dom]), _parse_space(k[:codom])
             table = reshape(Float64[Float64(v) for v in k[:table]], Tuple(Int.(k[:size])))
-            kernels[_kernel_ref_from(k[:ref])] = FiniteKernel(dom, codom, table)
+            ref = _kernel_ref_from(k[:ref])
+            kernels[ref] = try
+                FiniteKernel(dom, codom, table; atol=atol)
+            catch e
+                e isa FiniteKernels.KernelNormalizationError || rethrow()
+                throw(FormatError("the kernel $(ref) is not normalised within atol=$(atol) " *
+                                  "(largest row-mass deviation $(e.max_deviation)); pass the " *
+                                  "atol the model was bound with"))
+            end
         end
     end
     evidence = Dict{Symbol,Symbol}(Symbol(k) => Symbol(v)
@@ -335,8 +349,10 @@ end
 """
     read_json_model(path; type = BayesNet) -> BayesModel
 
-Read a model written by [`write_json_model`](@ref).
+Read a model written by [`write_json_model`](@ref). `atol` is passed to
+[`parse_json_model`](@ref) and must match the tolerance the model was bound with.
 """
-function read_json_model(path::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
-    return parse_json_model(read(path, String); type=type)
+function read_json_model(path::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet,
+                         atol::Real=DEFAULT_ATOL)
+    return parse_json_model(read(path, String); type=type, atol=atol)
 end

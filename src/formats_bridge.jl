@@ -71,6 +71,23 @@ end
 
 _extra(m::BayesModel, key::Symbol, default) = get(m.extras, key, default)
 
+# `extras` is a free-form `Dict{Symbol,Any}` and a JSON round trip does not preserve the
+# concrete types `ir_extras` builds: a `Tuple{Float64,Float64}` position comes back as a
+# two-element array and a `Symbol` as a string. Coerce the keys whose layout `ir_extras`
+# documents, so that a model which has been through `write_json_model`/`read_json_model`
+# still converts to a `NetworkIR` and writes back to a format file.
+_ir_symbol(x) = x isa Symbol ? x : Symbol(x)
+_ir_string(x) = x isa AbstractString ? String(x) : string(x)
+
+function _ir_position(x)
+    x === nothing && return nothing
+    x isa Tuple{Float64,Float64} && return x
+    if (x isa AbstractVector || x isa Tuple) && length(x) == 2
+        return (Float64(x[1]), Float64(x[2]))
+    end
+    throw(FormatError("a position in extras must be a pair of numbers, got $(repr(x))"))
+end
+
 """
     NetworkIR(m::BayesModel; name = extras(m)[:name]) -> NetworkIR
 
@@ -85,7 +102,7 @@ function NetworkIR(m::BayesModel; name::AbstractString=_extra(m, :name, "bayesne
     titles = _extra(m, :titles, Dict{Symbol,String}())
     positions = _extra(m, :positions, Dict{Symbol,Any}())
     comments = _extra(m, :comments, Dict{Symbol,String}())
-    deterministic = _extra(m, :deterministic, Symbol[])
+    deterministic = Set{Symbol}(_ir_symbol(d) for d in _extra(m, :deterministic, Symbol[]))
     vextras = _extra(m, :variable_extras, Dict{Symbol,Dict{Symbol,Any}}())
     vars = IRVariable[]
     for v in variables(bn)
@@ -99,14 +116,15 @@ function NetworkIR(m::BayesModel; name::AbstractString=_extra(m, :name, "bayesne
             k === nothing || (table = cpt(k))
         end
         push!(vars,
-              IRVariable(id; title=get(titles, id, ""), states=string.(states(bn, v)),
+              IRVariable(id; title=_ir_string(get(titles, id, "")),
+                         states=string.(states(bn, v)),
                          parents=ps, table=table, deterministic=id in deterministic,
-                         position=get(positions, id, nothing),
-                         comment=get(comments, id, ""),
+                         position=_ir_position(get(positions, id, nothing)),
+                         comment=_ir_string(get(comments, id, "")),
                          extras=get(vextras, id, Dict{Symbol,Any}())))
     end
-    return NetworkIR(name, vars; format=_extra(m, :format, :ir),
-                     source=_extra(m, :source, ""),
+    return NetworkIR(name, vars; format=_ir_symbol(_extra(m, :format, :ir)),
+                     source=_ir_string(_extra(m, :source, "")),
                      extras=_extra(m, :network_extras, Dict{Symbol,Any}()))
 end
 

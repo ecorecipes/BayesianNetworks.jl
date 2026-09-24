@@ -58,7 +58,7 @@ end
         cells = formal_cells(doc)
         @test length(cells) == 4 + 3 + 4 + 7
         @test all(nb["cellContents"][id]["tag"] == "formal" &&
-                      nb["cellContents"][id]["id"] == id for id in nb["cellOrder"])
+                  nb["cellContents"][id]["id"] == id for id in nb["cellOrder"])
         objs = filter(c -> c["tag"] == "object", cells)
         mors = filter(c -> c["tag"] == "morphism", cells)
         @test length(objs) == 7 && length(mors) == 11

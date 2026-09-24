@@ -8,9 +8,11 @@ const VIG = joinpath(ROOT, "vignettes")
 const OUT = joinpath(ROOT, "docs", "src", "tutorials")
 const CHECK = "--check" in ARGS
 
-vignette_dirs() = sort(filter(readdir(VIG)) do d
-    occursin(r"^\d+_", d) && isfile(joinpath(VIG, d, d * ".md"))
-end)
+function vignette_dirs()
+    sort(filter(readdir(VIG)) do d
+             return occursin(r"^\d+_", d) && isfile(joinpath(VIG, d, d * ".md"))
+         end)
+end
 
 function files_under(dir)
     out = Dict{String,Vector{UInt8}}()
@@ -19,7 +21,7 @@ function files_under(dir)
         p = joinpath(root, f)
         out[relpath(p, dir)] = read(p)
     end
-    out
+    return out
 end
 
 """
@@ -31,7 +33,7 @@ here keeps both layouts correct: the committed vignettes stay browsable on GitHu
 Documenter resolves the cross-references.
 """
 function rewrite_sibling_links(text::AbstractString)
-    replace(text, r"\]\(\.\./(\d+_[A-Za-z0-9_]+)/\1\.(md|qmd)\)" => s"](\1.md)")
+    return replace(text, r"\]\(\.\./(\d+_[A-Za-z0-9_]+)/\1\.(md|qmd)\)" => s"](\1.md)")
 end
 
 stale = String[]
@@ -41,7 +43,8 @@ for d in vignette_dirs()
     md_dst = joinpath(OUT, d * ".md")
     fig_src = joinpath(VIG, d, d * "_files")
     fig_dst = joinpath(OUT, d * "_files")
-    push!(expected, d * ".md"); isdir(fig_src) && push!(expected, d * "_files")
+    push!(expected, d * ".md")
+    isdir(fig_src) && push!(expected, d * "_files")
     if CHECK
         expected_md = rewrite_sibling_links(read(md_src, String))
         (isfile(md_dst) && read(md_dst, String) == expected_md) ||
@@ -50,7 +53,7 @@ for d in vignette_dirs()
     else
         mkpath(OUT)
         write(md_dst, rewrite_sibling_links(read(md_src, String)))
-        rm(fig_dst; recursive = true, force = true)
+        rm(fig_dst; recursive=true, force=true)
         isdir(fig_src) && cp(fig_src, fig_dst)
     end
 end
@@ -62,7 +65,7 @@ if isdir(OUT)
         if CHECK
             push!(stale, "orphan: " * f)
         else
-            rm(joinpath(OUT, f); recursive = true, force = true)
+            rm(joinpath(OUT, f); recursive=true, force=true)
         end
     end
 end

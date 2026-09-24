@@ -367,9 +367,8 @@ function catcolab_instance_document(bn::AbstractBayesNet, schema_doc;
             push!(cells, _formal_cell(name, "morphism", "$f/$p", content))
         end
     end
-    link = OrderedDict{String,Any}("_id" =>
-                                       catcolab_uuid(String(_field(schema_doc, "name")),
-                                                     "document"),
+    link = OrderedDict{String,Any}("_id" => catcolab_uuid(String(_field(schema_doc, "name")),
+                                                          "document"),
                                    "_version" => nothing, "_server" => nothing,
                                    "type" => "diagram-in")
     return _document("diagram", name, cells; diagramIn=link)

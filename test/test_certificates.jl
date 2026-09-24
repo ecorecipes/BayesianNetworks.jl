@@ -17,7 +17,7 @@ using JSON3
     @test isempty(cert.evidence)
     @test length(cert.bindings) == 2
     @test only(binding(cert, "Z_mechanism").columns).parents == Int[]
-    @test exact.(only(binding(cert, "Z_mechanism").columns).weights) == [1//4, 3//4]
+    @test exact.(only(binding(cert, "Z_mechanism").columns).weights) == [1 // 4, 3 // 4]
     @test binding(cert, "A_mechanism").input_states == [["no", "yes"]]
     @test binding(cert, "A_mechanism").output_states == ["off", "on"]
     @test getproperty.(binding(cert, "A_mechanism").columns, :parents) == [[1], [2]]
@@ -54,8 +54,8 @@ using JSON3
         b = binding(data, "repeated")
         @test b.input_states == [["x1", "x2"], ["x1", "x2"]]
         @test getproperty.(b.columns, :parents) == [[1, 1], [1, 2], [2, 1], [2, 2]]
-        @test exact.(b.columns[2].weights) == [1//4, 3//4]
-        @test exact.(b.columns[3].weights) == [3//4, 1//4]
+        @test exact.(b.columns[2].weights) == [1 // 4, 3 // 4]
+        @test exact.(b.columns[3].weights) == [3 // 4, 1 // 4]
         for column in b.columns
             @test exact.(column.weights) ==
                   Rational{BigInt}.(table[column.parents..., :])
@@ -66,9 +66,9 @@ using JSON3
 
     @testset "exact numbers before backend conversion" begin
         prior = bayesnet(:X => [:a, :b]; kernel_refs=Dict(:X => NamedRef("prior")))
-        for weights in ([1, 0], [1//3, 2//3], Float16[0.25, 0.75],
+        for weights in ([1, 0], [1 // 3, 2 // 3], Float16[0.25, 0.75],
                         Float32[0.25, 0.75], [0.25, 0.75], BigFloat[0.25, 0.75],
-                        Real[1//4, 0.75], [-0.0, 1.0], [nextfloat(0.0), 1.0])
+                        Real[1 // 4, 0.75], [-0.0, 1.0], [nextfloat(0.0), 1.0])
             source = bind_cpt(BayesModel(prior), :X => weights)
             data = proof_certificate(source)
             @test exact.(only(only(data.bindings).columns).weights) ==
@@ -76,10 +76,10 @@ using JSON3
         end
         data = proof_certificate(bind_cpt(BayesModel(prior), :X => [0.1, 0.9]))
         weights = exact.(only(only(data.bindings).columns).weights)
-        @test weights != [1//10, 9//10]
+        @test weights != [1 // 10, 9 // 10]
         @test sum(weights) == big"36028797018963969" // big"36028797018963968"
         setprecision(BigFloat, 256) do
-            weights = [BigFloat(1)/3, 1 - BigFloat(1)/3]
+            weights = [BigFloat(1) / 3, 1 - BigFloat(1) / 3]
             data = proof_certificate(bind_cpt(BayesModel(prior), :X => weights))
             captured = exact.(only(only(data.bindings).columns).weights)
             @test captured == Rational{BigInt}.(weights)
@@ -146,8 +146,7 @@ using JSON3
         @test_throws MissingMechanismError proof_certificate(BayesModel(bayesnet(:X => [:a,
                                                                                         :b];
                                                                                  closed=false)))
-        @test_throws ProofCertificateError proof_certificate(BayesModel(bayesnet(:X =>
-                                                                                     Symbol[])))
+        @test_throws ProofCertificateError proof_certificate(BayesModel(bayesnet(:X => Symbol[])))
         @test_throws UnknownVariableError proof_certificate(m;
                                                             evidence=Dict(:missing => :no))
         @test_throws UnknownStateError proof_certificate(m; evidence=Dict(:Z => :missing))
@@ -183,18 +182,16 @@ using JSON3
         set_subpart!(bad_ref, 1, :space_ref, NamedRef("bad\tref"))
         @test_throws ProofCertificateError proof_certificate(BayesModel(m; syntax=bad_ref))
         prior = bayesnet(:X => [:a, :b]; kernel_refs=Dict(:X => NamedRef("prior")))
-        for values in ([NaN, 1.0], [Inf, 0.0], [-1e-12, 1.0], [pi, pi], [1//0, 0//1])
+        for values in ([NaN, 1.0], [Inf, 0.0], [-1e-12, 1.0], [pi, pi], [1 // 0, 0 // 1])
             k = state(syntax_space(prior, :X), values; check=false)
             bad = BayesModel(prior; kernels=Dict(NamedRef("prior") => k))
             @test_throws ProofCertificateError proof_certificate(bad)
         end
         @test_throws ProofCertificateError proof_certificate(BayesModel(prior;
-                                                                        kernels=Dict(NamedRef("prior") =>
-                                                                                         [0.5,
-                                                                                          0.5])))
+                                                                        kernels=Dict(NamedRef("prior") => [0.5,
+                                                                                                           0.5])))
         @test_throws ProofCertificateError proof_certificate(BayesModel(m;
-                                                                        spaces=Dict(:Z =>
-                                                                                        :not_a_space)))
+                                                                        spaces=Dict(:Z => :not_a_space)))
         err = ProofCertificateError(:scalar_type, :Mechanism, 2, :prior, "unsupported")
         @test occursin("prior", sprint(showerror, err))
         @test occursin("scalar_type", sprint(showerror, err))

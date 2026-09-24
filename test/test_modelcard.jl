@@ -65,17 +65,15 @@ using Dates: DateTime
         # A mechanism that is not the card's is refused, which keeps card and model in
         # step.
         @test_throws UnknownMechanismError provenance!(card,
-                                                       :Nope_mechanism =>
-                                                           ParameterProvenance())
+                                                       :Nope_mechanism => ParameterProvenance())
         @test_throws UnknownMechanismError provenance(card, :Nope_mechanism)
         # The vector form attaches several at once.
         provenance!(card,
                     [:Climate_mechanism => ParameterProvenance(; source_type=:literature,
                                                                citation="Chen and Pollino (2012)"),
-                     :Vegetation_mechanism =>
-                         ParameterProvenance(; source_type=:empirical,
-                                             dataset="transects 2019-2024",
-                                             estimator="Dirichlet-multinomial")])
+                     :Vegetation_mechanism => ParameterProvenance(; source_type=:empirical,
+                                                                  dataset="transects 2019-2024",
+                                                                  estimator="Dirichlet-multinomial")])
         @test length(provenance(card)) == 3
         @test provenance(card, :Vegetation_mechanism).estimator ==
               "Dirichlet-multinomial"

@@ -317,8 +317,7 @@ function conditional(m::BayesModel, target, given; evidence=m.evidence,
     for ci in CartesianIndices(T)
         d = denom[CartesianIndex(ntuple(i -> i <= nt ? 1 : ci[i], ndims(T)))]
         d > 0 || on_zero !== :error ||
-            throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(gs[i - nt] =>
-                                                                  labels(factors(M.codom)[i])[ci[i]]
+            throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(gs[i - nt] => labels(factors(M.codom)[i])[ci[i]]
                                                               for i in (nt + 1):ndims(T))))
         out[ci] = d > 0 ? T[ci] / d : undefined
     end

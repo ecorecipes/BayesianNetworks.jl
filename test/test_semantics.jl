@@ -155,8 +155,8 @@
         # A stale kernel under a reference is caught; so is a stale space.
         bad = BayesModel(syntax(m);
                          kernels=merge(kernels(m),
-                                       Dict(NamedRef("Occupancy_mechanism") =>
-                                                kernel(m, :Climate))))
+                                       Dict(NamedRef("Occupancy_mechanism") => kernel(m,
+                                                                                      :Climate))))
         @test_throws KernelBindingError validate(bad)
         bad2 = BayesModel(ref; spaces=Dict(:Climate => FiniteSpace(:Climate, [:dry, :wet])))
         e = try

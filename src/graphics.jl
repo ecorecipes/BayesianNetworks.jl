@@ -111,8 +111,7 @@ function to_graphviz(bn::AbstractBayesNet; states::Bool=true,
         end
     end
     return Graphviz.Digraph(String(name), stmts; prog="dot",
-                            graph_attrs=merge(Dict{Symbol,String}(:rankdir =>
-                                                                      String(rankdir),
+                            graph_attrs=merge(Dict{Symbol,String}(:rankdir => String(rankdir),
                                                                   :fontname => _GV_FONT),
                                               _gv_attrs(graph_attrs)),
                             node_attrs=merge(Dict{Symbol,String}(:shape => "ellipse",

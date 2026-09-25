@@ -61,6 +61,14 @@ function _check_positions!(errs, bn, ob::Symbol, owner_ob::Symbol, owner_hom::Sy
     end
 end
 
+function _check_nonempty_states!(errs, bn::AbstractBayesNet)
+    for v in parts(bn, :Variable)
+        isempty(incident(bn, v, :state_variable)) &&
+            push!(errs, EmptyStateSpaceError(variable_name(bn, v), v))
+    end
+    return errs
+end
+
 function _check_state_names!(errs, bn::AbstractBayesNet)
     for v in parts(bn, :Variable)
         seen = Set{Symbol}()
@@ -132,6 +140,7 @@ function validation_errors(bn::AbstractBayesNet; closed::Bool=false,
     _check_positions!(errs, bn, :State, :Variable, :state_variable, :state_position,
                       :variable_name)
     _check_state_names!(errs, bn)
+    _check_nonempty_states!(errs, bn)
     _check_positions!(errs, bn, :Input, :Mechanism, :input_mechanism, :input_position,
                       :mechanism_name)
     if refs_ok

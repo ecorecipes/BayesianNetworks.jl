@@ -196,6 +196,23 @@ struct InterfaceMismatchError <: BayesNetError
 end
 
 """
+    EmptyStateSpaceError(variable, id)
+
+A variable has no states. A finite probability variable must have at least one, and a
+kernel cannot be built over an empty axis: without this check `validate` passed and the
+failure surfaced later as a `MethodError` from `FiniteAxis`.
+"""
+struct EmptyStateSpaceError <: BayesNetError
+    variable::Symbol
+    id::Int
+end
+
+function Base.showerror(io::IO, e::EmptyStateSpaceError)
+    return print(io, "EmptyStateSpaceError: variable :", e.variable, " (part ", e.id,
+                 ") has no states; a finite probability variable must have at least one")
+end
+
+"""
     UnknownStateError(variable, state)
 
 Variable `variable` has no state called `state` (raised by `observe`, `do_intervention`

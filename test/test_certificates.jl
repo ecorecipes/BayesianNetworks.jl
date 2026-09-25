@@ -146,7 +146,9 @@ using JSON3
         @test_throws MissingMechanismError proof_certificate(BayesModel(bayesnet(:X => [:a,
                                                                                         :b];
                                                                                  closed=false)))
-        @test_throws ProofCertificateError proof_certificate(BayesModel(bayesnet(:X => Symbol[])))
+        # `validate` now rejects a variable with no states, so this is caught earlier and
+        # more generally than by the certificate's own `:empty_states` check.
+        @test_throws EmptyStateSpaceError proof_certificate(BayesModel(bayesnet(:X => Symbol[])))
         @test_throws UnknownVariableError proof_certificate(m;
                                                             evidence=Dict(:missing => :no))
         @test_throws UnknownStateError proof_certificate(m; evidence=Dict(:Z => :missing))

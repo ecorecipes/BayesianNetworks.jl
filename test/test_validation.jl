@@ -128,3 +128,18 @@
         end
     end
 end
+
+@testset "EmptyStateSpaceError" begin
+    # `validate` had no "at least one state" check, so a variable with an empty state list
+    # passed and the failure surfaced much later as a `MethodError` from `FiniteAxis`
+    # inside `BayesModel`. `certificates.jl` already carried the check; `validate` did not.
+    bn = bayesnet(:A => [:a1, :a2])
+    add_variable!(bn, :Z; states=Symbol[])
+    @test_throws EmptyStateSpaceError validate(bn)
+    errs = validation_errors(bn)
+    @test any(e -> e isa EmptyStateSpaceError && e.variable == :Z, errs)
+    msg = sprint(showerror, EmptyStateSpaceError(:Z, 2))
+    @test occursin("has no states", msg)
+
+    @test validate(bayesnet(:A => [:a1, :a2])) === nothing
+end

@@ -317,6 +317,7 @@ DuplicateGeneratorError
 DanglingReferenceError
 PositionError
 DuplicateStateError
+EmptyStateSpaceError
 SelfInputError
 DuplicateNameError
 NameClashError

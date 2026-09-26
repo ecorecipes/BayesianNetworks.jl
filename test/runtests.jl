@@ -22,4 +22,5 @@ using BayesianNetworks
     include("test_graphics.jl")
     include("test_catcolab.jl")
     include("test_dynamic.jl")
+    include("test_docstrings.jl")
 end

@@ -89,6 +89,15 @@ using Random
                                                       :Occupancy)
         @test occursin("wet",
                        sprint(showerror, ImpossibleEvidenceError(Dict(:Climate => :wet))))
+        # The message says "computed": a positive probability can underflow to zero.
+        msg = sprint(showerror, ImpossibleEvidenceError(Dict(:Climate => :wet)))
+        @test occursin("zero computed probability", msg)
+        @test occursin("underflowed", msg) && occursin("LogVariableElimination", msg)
+        # With no evidence, the zero mass belongs to the model or factor graph itself.
+        empty_msg = sprint(showerror, ImpossibleEvidenceError(Dict{Symbol,Symbol}()))
+        @test startswith(empty_msg, "ImpossibleEvidenceError: ")
+        @test occursin("the model or factor graph has zero total mass", empty_msg)
+        @test !occursin("Dict", empty_msg)
         # Conditionals recover the mechanism kernels and Bayes' rule.
         k = conditional(m, :Occupancy, :HabitatQuality)
         @test k ≈ kernel(m, :Occupancy)

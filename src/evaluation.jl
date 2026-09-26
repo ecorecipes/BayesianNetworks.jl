@@ -242,8 +242,8 @@ The posterior marginal `P(vars | evidence)` as a state `I → ⊗ vars` (axes in
 of `vars`), by brute force: the joint of the model is conditioned on the evidence (the
 model's own by default; pass `evidence = Dict()` for the prior marginal, or any
 dictionary or list of `:X => :x` pairs), renormalised
-([`ImpossibleEvidenceError`](@ref) if the evidence has probability zero) and summed
-over the other variables. Interventions are already in the syntax, so
+([`ImpossibleEvidenceError`](@ref) if the evidence has zero computed probability) and
+summed over the other variables. Interventions are already in the syntax, so
 `marginal(do_intervention(m, :Y => :y), [:X])` is the interventional distribution.
 
 # Example

@@ -425,8 +425,36 @@ end
 """
     ImpossibleEvidenceError(evidence)
 
-The recorded evidence has probability zero under the model, so conditioning on it is
-undefined.
+The evidence has zero computed probability under the model, so conditioning on it is
+undefined. `evidence` maps each conditioned variable to its state: the observations, or
+for [`conditional`](@ref) the configuration of the `given` variables that failed. It is
+empty when nothing was observed and the model or factor graph itself has zero total mass,
+which only a raw factor graph can have; the message then says so.
+
+A zero computed probability is usually an exact zero, but not always. The paths that form
+the evidence mass as a single binary64 number also raise this error for:
+
+- a positive probability that underflowed to zero, as the probability of very rare
+  evidence can;
+- a mass that tolerated rounding drove to zero or below: validation accepts kernel
+  entries down to `-atol` (ADR 0007), and such entries can make the computed mass
+  non-positive.
+
+Those paths are [`marginal`](@ref) and [`conditional`](@ref) (with `on_zero = :error`)
+here; variable elimination, the junction tree, brute force and belief propagation (with
+`check_evidence = true`, or when a conditioned scalar is zero) in
+BayesianNetworkInference; and the default decision-elimination, exhaustive and
+`expected_utility` paths of InfluenceDiagrams (ADR 0012).
+
+To tell the cases apart, ask a path that does not form that binary64 mass:
+
+- BayesianNetworkInference's `log_evidence_probability` returns `-Inf` for an exact zero
+  and a finite logarithm for a probability that underflowed;
+- its log-domain backends `LogVariableElimination` and `LogJunctionTree` answer a query
+  whose evidence probability underflowed, raise this error only for an exact zero, and
+  reject a negative entry with `LogFactorDomainError` instead of computing with it;
+- the InfluenceDiagrams solvers take `stable = true`, which computes the mass exactly or
+  in the log domain and so does not report an underflowed probability as zero.
 """
 struct ImpossibleEvidenceError <: BayesNetError
     evidence::Dict{Symbol,Symbol}
@@ -484,8 +512,17 @@ function Base.showerror(io::IO, e::OpenCertificateError)
 end
 
 function Base.showerror(io::IO, e::ImpossibleEvidenceError)
-    return print(io, "ImpossibleEvidenceError: the evidence ", e.evidence,
-                 " has probability zero under the model")
+    if isempty(e.evidence)
+        print(io, "ImpossibleEvidenceError: no evidence was given, but the model or ",
+              "factor graph has zero total mass")
+    else
+        print(io, "ImpossibleEvidenceError: the evidence ", e.evidence,
+              " has zero computed probability under the model")
+    end
+    return print(io, ". Besides an exact zero, this can be a positive mass that ",
+                 "underflowed, or a mass that tolerated rounding drove to zero or below; ",
+                 "LogVariableElimination, LogJunctionTree, log_evidence_probability and ",
+                 "stable=true tell these apart")
 end
 
 function Base.showerror(io::IO, e::ModelTooLargeError)

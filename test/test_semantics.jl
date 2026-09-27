@@ -1,3 +1,13 @@
+function caught_error(f)
+    try
+        f()
+    catch err
+        return err
+    end
+    return nothing
+end
+e_atol(f, args...; kw...) = caught_error(() -> f(args...; kw...)).atol
+
 @testset "Semantics binding" begin
     ref = reference_habitat_bn()
     m0 = BayesModel(ref)
@@ -125,6 +135,38 @@
         @test cpt(kernel(mr, :Occupancy))[1, :] ≈ [0.8, 0.3] ./ 1.1
         @test bind_cpt(m0, :Climate => [0.3, 0.5, 0.2]) isa BayesModel
         @test_throws KernelBindingError bind_cpt(m0, :Climate => [0.5, 0.5])
+        # The model boundary (ADR 0013): an invalid entry is wrapped with the variable and
+        # the entry's assignment, and the tolerance is recorded on normalisation errors.
+        @test e_atol(bind_cpt, m0, :Occupancy => [0.8 0.3; 0.25 0.75]) == DEFAULT_ATOL
+        bad = caught_error(() -> bind_cpt(m0, :Occupancy => [1.5 -0.5; 0.25 0.75]))
+        @test bad isa InvalidKernelEntryError && bad.variable == :Occupancy
+        @test bad.value == -0.5
+        @test bad.assignment == [:HabitatQuality => :poor, :Occupancy => :present]
+        @test bad isa BayesNetError
+        @test occursin("Occupancy", sprint(showerror, bad))
+        nan = caught_error(() -> bind_cpt(m0, :Climate => [NaN, 1.0, 0.0]))
+        @test nan isa InvalidKernelEntryError && isnan(nan.value)
+        @test nan.assignment == [:Climate => :dry]
+        # semantic_errors collects it rather than throwing, and validate throws the first
+        # collected error in mechanism order.
+        badk = cpt(axis(ref, :HabitatQuality), axis(ref, :Occupancy),
+                   [1.5 -0.5; 0.25 0.75]; check=false)
+        occ_ref = kernel_ref(syntax(m),
+                             mechanism_of(syntax(m), variable_id(syntax(m), :Occupancy)))
+        mbad = BayesModel(syntax(m); spaces=spaces(m),
+                          kernels=merge(kernels(m), Dict(occ_ref => badk)))
+        errs = semantic_errors(mbad)
+        @test count(x -> x isa InvalidKernelEntryError, errs) == 1
+        @test_throws InvalidKernelEntryError validate(mbad)
+        # renormalize checks entries and rows before rescaling.
+        @test_throws InvalidKernelEntryError bind_cpt(m0,
+                                                      :Occupancy => [-1.0 -3.0; 0.25 0.75];
+                                                      renormalize=true)
+        zero_row = caught_error(() -> bind_cpt(m0, :Occupancy => [0.0 0.0; 0.25 0.75];
+                                               renormalize=true))
+        @test zero_row isa UnnormalizedKernelError && zero_row.max_deviation == 1.0
+        # A tolerated negative entry (within -atol) is accepted.
+        @test bind_cpt(m0, :Occupancy => [1.0+1e-9 -1e-9; 0.25 0.75]) isa BayesModel
         # Point-mass mechanisms are materialised and cannot be bound.
         md = do_intervention(m, :Vegetation => :dense)
         @test kernel(md, :Vegetation) == point_mass(space(m, :Vegetation), :dense)

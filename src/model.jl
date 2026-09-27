@@ -245,10 +245,12 @@ items 8 to 10): every stored space agrees with the variable's states
 the variable's space as codomain and the tensor of its parents' spaces as domain
 ([`KernelBindingError`](@ref)) and is normalised within `atol`
 ([`UnnormalizedKernelError`](@ref); `DEFAULT_ATOL` is FiniteKernels' `1e-8`, and
-models read from files with a looser tolerance should be validated with the same one).
+models read from files with a looser tolerance should be validated with the same one),
+with every entry finite and at least `-atol` ([`InvalidKernelEntryError`](@ref)).
 With `semantics = true` every mechanism's reference must resolve
 ([`MissingKernelError`](@ref)); by default a structural model without kernels is valid.
-The first violation is thrown.
+The first violation is thrown; semantic violations are taken in mechanism order, from
+[`semantic_errors`](@ref).
 """
 function validate(m::BayesModel; closed::Bool=false, unique_names::Bool=false,
                   semantics::Bool=false, atol::Real=DEFAULT_ATOL)

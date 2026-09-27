@@ -141,24 +141,26 @@ end
 
     @testset "equality agrees with hash" begin
         # NaN fields: an error equals itself and an identical one.
-        e = UnnormalizedKernelError(:X, NaN)
+        e = UnnormalizedKernelError(:X, NaN, 1e-8)
         @test e == e
-        @test e == UnnormalizedKernelError(:X, NaN)
-        @test isequal(e, UnnormalizedKernelError(:X, NaN))
-        @test hash(e) == hash(UnnormalizedKernelError(:X, NaN))
-        @test length(Set([e, UnnormalizedKernelError(:X, NaN)])) == 1
+        @test e == UnnormalizedKernelError(:X, NaN, 1e-8)
+        @test isequal(e, UnnormalizedKernelError(:X, NaN, 1e-8))
+        @test hash(e) == hash(UnnormalizedKernelError(:X, NaN, 1e-8))
+        @test length(Set([e, UnnormalizedKernelError(:X, NaN, 1e-8)])) == 1
         # Signed zeros: `isequal` tells them apart, and so does `hash`.
-        @test UnnormalizedKernelError(:X, 0.0) != UnnormalizedKernelError(:X, -0.0)
-        @test UnnormalizedKernelError(:X, 0.0) == UnnormalizedKernelError(:X, 0.0)
+        @test UnnormalizedKernelError(:X, 0.0, 1e-8) !=
+              UnnormalizedKernelError(:X, -0.0, 1e-8)
+        @test UnnormalizedKernelError(:X, 0.0, 1e-8) ==
+              UnnormalizedKernelError(:X, 0.0, 1e-8)
         # Different types never compare equal, even with equal fields.
         @test UnknownVariableError(:A) != UnknownMechanismError(:A)
         # A sample with vector, `Any`, `Dict`, `nothing`, NaN and signed-zero fields: for
         # every pair, `==` and `isequal` agree, and equal errors hash alike.
-        sample = BayesNetError[UnnormalizedKernelError(:X, NaN),
-                               UnnormalizedKernelError(:X, NaN),
-                               UnnormalizedKernelError(:X, 0.0),
-                               UnnormalizedKernelError(:X, -0.0),
-                               UnnormalizedKernelError(:Y, 0.0),
+        sample = BayesNetError[UnnormalizedKernelError(:X, NaN, 1e-8),
+                               UnnormalizedKernelError(:X, NaN, 1e-8),
+                               UnnormalizedKernelError(:X, 0.0, 1e-8),
+                               UnnormalizedKernelError(:X, -0.0, 1e-8),
+                               UnnormalizedKernelError(:Y, 0.0, 1e-8),
                                CyclicBayesNetError([:A, :B], [1, 2]),
                                CyclicBayesNetError([:A, :B], [1, 2]),
                                CyclicBayesNetError([:B, :A], [2, 1]),

@@ -342,6 +342,7 @@ NoEvidenceError
 MissingKernelError
 KernelBindingError
 UnnormalizedKernelError
+InvalidKernelEntryError
 ProofCertificateError
 OpenCertificateError
 ImpossibleEvidenceError

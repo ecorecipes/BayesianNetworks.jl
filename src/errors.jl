@@ -466,14 +466,39 @@ struct KernelBindingError <: BayesNetError
 end
 
 """
-    UnnormalizedKernelError(variable, max_deviation)
+    UnnormalizedKernelError(variable, max_deviation, atol)
 
 The kernel bound to the mechanism of `variable` is not normalised over its output axis:
-some column sums to `1 + max_deviation` (in absolute value) beyond the tolerance.
+some column's sum differs from one by `max_deviation`, more than the tolerance `atol` it
+was checked against. `atol` is recorded because tolerances differ by layer (a file table is
+read at `1e-6`, a model is validated at `DEFAULT_ATOL`), so the same table can pass one
+check and fail another. A row whose sum is zero, rejected by `bind_cpt(renormalize=true)`,
+has `max_deviation == 1.0`.
 """
 struct UnnormalizedKernelError <: BayesNetError
     variable::Symbol
     max_deviation::Float64
+    atol::Float64
+end
+
+"""
+    InvalidKernelEntryError(variable, assignment, value, atol)
+
+An entry of the kernel bound to the mechanism of `variable` is not finite, or is negative
+by more than the tolerance `atol` (ADR 0007: entries down to `-atol` are accepted, because
+tables read from files and produced by arithmetic round below zero). `assignment` names
+the entry: the parent-state pairs in `input_position` order, then the variable's own state,
+so it reads the same whether the table was written parents-first (`bind_cpt`) or as an
+outputs-first kernel (`bind_kernel`). `value` is the offending entry.
+
+This wraps `FiniteKernels`' `KernelEntryError` at the model layer (ADR 0013), which adds the
+variable, so that [`semantic_errors`](@ref) collects it like every other binding error.
+"""
+struct InvalidKernelEntryError <: BayesNetError
+    variable::Symbol
+    assignment::Vector{Pair{Symbol,Symbol}}
+    value::Float64
+    atol::Float64
 end
 
 """
@@ -586,7 +611,15 @@ end
 
 function Base.showerror(io::IO, e::UnnormalizedKernelError)
     return print(io, "UnnormalizedKernelError: the kernel of variable :", e.variable,
-                 " is not normalised (maximum deviation from 1 is ", e.max_deviation, ")")
+                 " is not normalised (maximum deviation from 1 is ", e.max_deviation,
+                 ", tolerance ", e.atol, ")")
+end
+
+function Base.showerror(io::IO, e::InvalidKernelEntryError)
+    at = join(("$(k) = $(v)" for (k, v) in e.assignment), ", ")
+    return print(io, "InvalidKernelEntryError: the kernel of variable :", e.variable,
+                 " has the entry ", e.value, " at ", at,
+                 "; entries must be finite and at least -", e.atol)
 end
 
 function Base.showerror(io::IO, e::ProofCertificateError)

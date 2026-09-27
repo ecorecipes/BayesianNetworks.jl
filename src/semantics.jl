@@ -111,10 +111,46 @@ function _check_kernel(bn::AbstractBayesNet, mech::Integer, k::FiniteKernel;
     try
         assert_normalized(k; atol=atol)
     catch e
-        e isa FiniteKernels.KernelNormalizationError || rethrow()
-        throw(UnnormalizedKernelError(x, e.max_deviation))
+        if e isa FiniteKernels.KernelNormalizationError
+            throw(UnnormalizedKernelError(x, e.max_deviation, atol))
+        elseif e isa FiniteKernels.KernelEntryError
+            throw(InvalidKernelEntryError(x, _entry_assignment(bn, mech, k, e.index),
+                                          Float64(e.value), atol))
+        end
+        rethrow()
     end
     return k
+end
+
+# The entry at `index` of a kernel in FiniteKernels' internal `(codom axes..., dom axes...)`
+# layout, as parent-state pairs in `input_position` order followed by the variable's own
+# state, so that an error reads the same whichever layout the table was written in.
+function _entry_assignment(bn::AbstractBayesNet, mech::Integer, k::FiniteKernel,
+                           index::CartesianIndex)
+    I = Tuple(index)
+    nc = length(k.codom.axes)
+    child = [a.name => a.labels[I[i]] for (i, a) in enumerate(k.codom.axes)]
+    parents = [a.name => a.labels[I[nc + i]] for (i, a) in enumerate(k.dom.axes)]
+    return Pair{Symbol,Symbol}[parents; child]
+end
+
+# `bind_cpt(renormalize=true)` rescales each row, so it first applies the entry and row
+# checks that rescaling would otherwise hide: an entry that is not finite or is below
+# `-atol`, and a row whose sum is not positive (which has no normalisation).
+function _check_rows_for_renormalize(bn, mech, k::FiniteKernel, atol::Real)
+    x = variable_name(bn, target(bn, mech))
+    for ci in CartesianIndices(k.table)
+        v = k.table[ci]
+        (isfinite(v) && v >= -atol) ||
+            throw(InvalidKernelEntryError(x, _entry_assignment(bn, mech, k, ci), Float64(v),
+                                          atol))
+    end
+    nc = length(k.codom.axes)
+    s = nc == 0 ? k.table : sum(k.table; dims=Tuple(1:nc))
+    for t in s
+        t > 0 || throw(UnnormalizedKernelError(x, abs(t - 1), atol))
+    end
+    return nothing
 end
 
 # Mechanism addressed by a variable name (its generating mechanism) or, failing that,
@@ -206,7 +242,11 @@ end
 table in the user-facing layout: `size(table) == (n(P1), ..., n(Pk), n(X))` for parents
 `P1, ..., Pk` in `input_position` order, normalised over the last axis; a vector for a
 root. A wrong size is a [`KernelBindingError`](@ref) with `what == :table`. With
-`renormalize = true` every row is rescaled to sum to one before binding.
+`renormalize = true` every row is rescaled to sum to one before binding; the entries are
+checked first (finite and at least `-atol`, else [`InvalidKernelEntryError`](@ref)), and a
+row whose sum is not positive raises [`UnnormalizedKernelError`](@ref), since it has no
+normalisation. Without it, an unnormalised row raises `UnnormalizedKernelError` and an
+invalid entry `InvalidKernelEntryError`, both through [`bind_kernel`](@ref).
 """
 function bind_cpt(m::BayesModel, b::Pair{Symbol,<:AbstractArray};
                   atol::Real=DEFAULT_ATOL, renormalize::Bool=false)
@@ -220,7 +260,10 @@ function bind_cpt(m::BayesModel, b::Pair{Symbol,<:AbstractArray};
     size(table) == expected ||
         throw(KernelBindingError(x, :table, expected, size(table)))
     k = cpt(ps, child, table; check=false)
-    renormalize && (k = normalize(k))
+    if renormalize
+        _check_rows_for_renormalize(bn, mech, k, atol)
+        k = normalize(k)
+    end
     return bind_kernel(m, x => k; atol=atol)
 end
 
@@ -307,8 +350,10 @@ The semantic problems of `m` (SPEC section 11, items 8 to 10), in a deterministi
 order: stored spaces that name no variable ([`UnknownVariableError`](@ref)) or differ
 from the variable's states ([`KernelBindingError`](@ref) with `what == :space`), and for
 every mechanism whose reference resolves, a kernel whose domain or codomain does not fit
-([`KernelBindingError`](@ref)) or that is not normalised within `atol`
-([`UnnormalizedKernelError`](@ref)). With `semantics = true` a reference that does not
+([`KernelBindingError`](@ref)), that is not normalised within `atol`
+([`UnnormalizedKernelError`](@ref)), or that has an entry that is not finite or is below
+`-atol` ([`InvalidKernelEntryError`](@ref)); every one is collected rather than thrown, in
+mechanism order, so [`validate`](@ref) throws the first. With `semantics = true` a reference that does not
 resolve is a [`MissingKernelError`](@ref). Kernels that are not `FiniteKernel`s
 (alternative semantics) are not checked.
 """

@@ -307,8 +307,21 @@ parse_presentation_json
 
 ## Exceptions
 
+Every exception type this package defines subtypes [`BayesNetError`](@ref), the root of
+this package and of the packages built on it, and [`AnyBayesNetError`](@ref) catches every
+typed exception of the ecosystem (ADR 0013). The kernel API's errors pass through
+unchanged, and FiniteKernels.jl's root `FiniteKernelsError` and its five types
+`InvalidAxisError`, `KernelShapeError`, `KernelEntryError`, `KernelNormalizationError` and
+`SpaceMismatchError` are re-exported; they are documented in the FiniteKernels.jl API
+reference. Of BayesianNetworkFormats.jl only the root, `BayesianNetworkFormatsError`, is
+re-exported: its concrete types, which pass through [`read_bayesnet`](@ref) unchanged,
+are reached qualified, as `BayesianNetworkFormats.ParseError` and so on, and are
+documented in the BayesianNetworkFormats.jl API reference. The two errors of the Graphviz
+submodule are listed under [Graphics](@ref).
+
 ```@docs
 BayesNetError
+AnyBayesNetError
 UnknownVariableError
 UnknownMechanismError
 CyclicBayesNetError

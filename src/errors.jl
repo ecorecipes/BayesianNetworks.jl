@@ -3,16 +3,54 @@ Typed exceptions. Every error carries the offending names and part ids so that m
 can be read without consulting the network.
 """
 
+# Exception roots (ADR 0013). `BayesNetError` is the root of this package and of every
+# package built on it; `AnyBayesNetError` adds the roots of the two leaves below it and the
+# stand-alone Graphviz errors, so that one name catches every typed exception of the
+# ecosystem. Every exception this package defines lives in this file and subtypes
+# `BayesNetError`, except the two Graphviz errors, which stay in the stand-alone submodule
+# `graphviz.jl`. Invalid arguments and keywords raise `ArgumentError`; typed errors of
+# FiniteKernels and BayesianNetworkFormats pass through unchanged where nothing is added.
+
 """
     BayesNetError
 
-Abstract supertype of every exception thrown by BayesianNetworks.jl.
+Abstract supertype of every exception that BayesianNetworks defines outside its
+stand-alone Graphviz submodule, and of the exceptions that the packages built on it
+define, such as `InfluenceDiagrams`' `InfluenceDiagramError` and
+`CategoricalBayesianNetworks`' `ConflictingKernelError`. It marks the dependency tier that
+introduced an error, not a kind of failure (ADR 0013): a `BayesNetError` was raised by this
+package or by a package that depends on it.
+
+Not every exception that this package's functions raise is a `BayesNetError`. Where the
+package adds nothing to a typed error of a lower package, that error passes through
+unchanged:
+
+- `BayesianNetworkFormats`' errors, under its root `BayesianNetworkFormatsError`, from
+  [`read_bayesnet`](@ref), where wrapping would hide the offending row of the file;
+- `FiniteKernels`' errors, under its root `FiniteKernelsError`, from the re-exported
+  kernel API, and `SpaceMismatchError` from [`JointTable`](@ref).
+
+Both lower roots and the five `FiniteKernels` error types are re-exported;
+`BayesianNetworkFormats`' concrete error types are not. Where the package adds
+information, such as the variable a kernel is bound to or the record of a JSON document,
+it raises its own type instead, for example [`UnnormalizedKernelError`](@ref) or
+[`FormatError`](@ref). The two errors of the [`Graphviz`](@ref BayesianNetworks.Graphviz)
+submodule subtype `Exception` directly, because the submodule depends on nothing else in
+the package. [`AnyBayesNetError`](@ref) catches all of these. Invalid arguments and
+keywords raise Base's `ArgumentError`, and a missing file raises `SystemError`; both are
+outside every root.
+
+Two errors of the same concrete type are `==` when their fields are pairwise `isequal`,
+so `==` agrees with `hash`: a `NaN` field equals itself, and `-0.0` differs from `0.0`.
 """
 abstract type BayesNetError <: Exception end
 
 # Structural equality, so that errors with vector fields compare by content in tests.
+# Fields are compared with `isequal`, as `hash` below hashes them, so that `a == b` implies
+# `hash(a) == hash(b)`: `==` on the fields would make an error with a `NaN` field unequal to
+# itself, and one with a `-0.0` field equal to one with `0.0` but hashed differently.
 function Base.:(==)(a::T, b::T) where {T<:BayesNetError}
-    return all(getfield(a, f) == getfield(b, f) for f in fieldnames(T))
+    return all(isequal(getfield(a, f), getfield(b, f)) for f in fieldnames(T))
 end
 
 function Base.hash(e::BayesNetError, h::UInt)
@@ -21,6 +59,45 @@ function Base.hash(e::BayesNetError, h::UInt)
     end
     return hash(typeof(e), h)
 end
+
+"""
+    AnyBayesNetError
+
+Every typed exception of the ecosystem: the `Union` of the three roots,
+[`BayesNetError`](@ref), `FiniteKernelsError` and `BayesianNetworkFormatsError`, and the
+two errors of the stand-alone Graphviz submodule,
+[`Graphviz.UnavailableGraphvizError`](@ref BayesianNetworks.Graphviz.UnavailableGraphvizError)
+and
+[`Graphviz.UnknownLayoutProgramError`](@ref BayesianNetworks.Graphviz.UnknownLayoutProgramError).
+It is a `Union`, not an abstract type: catch it and dispatch on it, but never subtype it.
+A new exception type subtypes the nearest root instead (ADR 0013).
+
+Base exceptions are outside it: `ArgumentError` for invalid arguments, keywords and
+algebraic preconditions, `SystemError` for a missing file, and a few data conditions that
+are still raised as `ArgumentError` or `KeyError`.
+
+```julia
+try
+    m = read_bayesnet(path)   # BayesianNetworkFormats' errors pass through unchanged
+    validate(m; semantics = true)
+catch e
+    e isa AnyBayesNetError || rethrow()   # a missing file, a bad keyword, a bug
+    @warn "the file or the model was rejected" exception = e
+end
+```
+
+```jldoctest
+julia> try
+           FiniteAxis(:Rain, Symbol[])
+       catch e
+           e isa AnyBayesNetError
+       end
+true
+```
+"""
+const AnyBayesNetError = Union{BayesNetError,FiniteKernelsError,BayesianNetworkFormatsError,
+                               Graphviz.UnavailableGraphvizError,
+                               Graphviz.UnknownLayoutProgramError}
 
 """
     UnknownVariableError(name)

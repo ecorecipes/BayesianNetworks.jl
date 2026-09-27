@@ -35,7 +35,10 @@ Structural layer (available now):
 - Derived graphs: `variable_graph`, `topological_order`, `is_acyclic`, `moral_graph`
   (Graphs.jl `SimpleDiGraph` / `SimpleGraph`, with vertex id = variable part id).
 - `validate` / `validation_errors` / `isvalid` with typed exceptions for every structural
-  check of SPEC §11 (open and closed networks).
+  check of SPEC §11 (open and closed networks). Every exception the package defines is a
+  `BayesNetError` (the Graphviz submodule's two apart), and `AnyBayesNetError` also catches
+  those two and the FiniteKernels and BayesianNetworkFormats errors that pass through
+  (ADR 0013).
 - `canonicalize` and `is_isomorphic` for order-independent comparison.
 - JSON serialisation (`json_bayesnet`, `write_json_bayesnet`, ...) in a versioned envelope
   around ACSets' JSON, and `schema_json`.

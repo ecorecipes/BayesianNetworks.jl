@@ -41,7 +41,8 @@ using Random: AbstractRNG, default_rng
 using UUIDs: UUID, uuid5
 using FiniteKernels
 using BayesianNetworkFormats: NetworkIR, IRVariable, ChanceNode, DecisionNode, UtilityNode,
-                              read_network, write_network, fixture_path
+                              read_network, write_network, fixture_path,
+                              BayesianNetworkFormatsError
 
 import FiniteKernels: marginal
 import BayesianNetworkFormats: NetworkIR
@@ -61,6 +62,14 @@ export FiniteAxis, FiniteSpace, FiniteKernel, cpt, state, point_mass, uniform,
        swap_kernel, apply, DEFAULT_ATOL
 # Re-exported BayesianNetworkFormats names used by the bridge.
 export NetworkIR, fixture_path
+# Re-exported exception roots and types (ADR 0013). The kernel API above raises
+# FiniteKernels' errors, so every exception type FiniteKernels exports is re-exported
+# (test/test_errors.jl checks for drift). Of BayesianNetworkFormats only the root: the
+# conformance adapters load this package with `using`, and the inspect adapter records
+# Formats' concrete types under their qualified names, which a re-export would change.
+export FiniteKernelsError, InvalidAxisError, KernelShapeError, KernelEntryError,
+       KernelNormalizationError, SpaceMismatchError
+export BayesianNetworkFormatsError
 
 # graphviz.jl
 export Graphviz
@@ -70,7 +79,8 @@ export KernelRef, NamedRef, PointMassRef, PolicyRef, NoRef
 export SchVariableSpace, SchBayesNet, AbstractVariableSpace, AbstractBayesNet,
        VariableSpaceUntyped, BayesNetUntyped, VariableSpace, BayesNet
 # errors.jl
-export BayesNetError, UnknownVariableError, UnknownMechanismError, CyclicBayesNetError,
+export BayesNetError, AnyBayesNetError
+export UnknownVariableError, UnknownMechanismError, CyclicBayesNetError,
        MissingMechanismError, DuplicateGeneratorError, DanglingReferenceError,
        PositionError, DuplicateStateError, EmptyStateSpaceError, SelfInputError,
        DuplicateNameError,
@@ -137,7 +147,7 @@ using .Graphviz: Graphviz
 
 include("refs.jl")
 include("schemas.jl")
-include("errors.jl")
+include("errors.jl")  # after graphviz.jl: `AnyBayesNetError` names the two Graphviz errors
 include("construction.jl")
 include("inspection.jl")
 include("graph.jl")

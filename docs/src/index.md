@@ -43,6 +43,8 @@ variable_name.(Ref(bn), topological_order(bn))
 
 [`validate`](@ref) throws the first violation as a typed exception; [`validation_errors`](@ref) collects them all and `isvalid` reports a `Bool`. Open networks (variables without a mechanism) are accepted unless `closed = true`. Duplicate variable and mechanism names are reported only with `unique_names = true`, because tensoring networks legitimately repeats names.
 
+Every exception this package defines is a [`BayesNetError`](@ref), apart from the two errors of the stand-alone `Graphviz` submodule. The errors of FiniteKernels.jl and BayesianNetworkFormats.jl pass through the kernel API and [`read_bayesnet`](@ref) unchanged. [`AnyBayesNetError`](@ref) catches all of them: it is the `Union` of the three roots and the two Graphviz errors (ADR 0013). Invalid arguments and keywords raise `ArgumentError`, and a missing file raises `SystemError`; both are outside it.
+
 ## Canonical forms and serialisation
 
 ACSet equality is sensitive to part numbering, so [`canonicalize`](@ref) renumbers parts deterministically (variables by name, states by position, mechanisms by target, inputs by position); [`is_isomorphic`](@ref) compares canonical forms. [`json_bayesnet`](@ref) / [`parse_json_bayesnet`](@ref) and the file variants wrap ACSets' JSON representation in a `{"format", "schema_version", "acset"}` envelope, and [`schema_json`](@ref) returns the schema description that CI compares against the schema emitted by the Lean project in `proofs/`. The Lean `SchemaDesc` terms and the Julia `BasicSchema` declarations are two hand-written definitions checked to agree (`lake exe emit_schema --check` and a Julia test); neither is generated from, or the source of truth for, the other.

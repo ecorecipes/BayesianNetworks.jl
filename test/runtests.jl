@@ -8,6 +8,7 @@ using BayesianNetworks
     include("test_inspection.jl")
     include("test_graph.jl")
     include("test_validation.jl")
+    include("test_errors.jl")
     include("test_canonicalize.jl")
     include("test_serialization.jl")
     include("test_interventions.jl")

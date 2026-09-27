@@ -52,7 +52,17 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   neither is the source of truth for the other: change both together. A downstream schema
   extension is built by appending to `objects` / `homs` / `attrtypes` / `attrs` of
   `SchBayesNet` (see `InfluenceDiagrams.jl` and `test/test_interventions.jl`).
-- `src/errors.jl`: typed exceptions (`BayesNetError` subtypes) with `showerror` messages.
+- `src/errors.jl`: typed exceptions (`BayesNetError` subtypes) with `showerror` messages
+  (ADR 0013). `BayesNetError` is a provenance root: it marks errors introduced by this
+  package or a package built on it, not a kind of failure. Its docstring states the
+  pass-through contract (Formats errors from `read_bayesnet`, FiniteKernels errors from the
+  kernel API and `SpaceMismatchError` from `JointTable`) and that the two Graphviz errors
+  stay outside it, in their stand-alone submodule. Its `==` compares fields with `isequal`,
+  so that it agrees with `hash` (NaN fields equal, `-0.0 != 0.0`); every subtype,
+  downstream ones included, inherits both. `AnyBayesNetError` is the exported `Union` of the
+  three roots (`BayesNetError`, `FiniteKernelsError`, `BayesianNetworkFormatsError`) and the
+  two Graphviz errors: for catching and dispatch, never for subtyping. It names the
+  Graphviz types, so `errors.jl` is included after `graphviz.jl`.
 - `src/construction.jl`: `add_*!` builders, `bayesnet` DSL, name lookups.
 - `src/inspection.jl`: read-only accessors (`states`, `parents`, `inputs`, ...), ordered by positions.
 - `src/graph.jl`: derived `variable_graph` (a Graphs.jl `SimpleDiGraph`), `topological_order`
@@ -157,8 +167,13 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   `catcolab_uuid` (UUID v5 in `CATCOLAB_NAMESPACE`); documents are `OrderedDict`s.
 - `test/helpers.jl`: `abiotic_bn` and `biotic_bn`, the two halves of the reference network
   (the same pair `CategoricalBayesianNetworks.jl` composes), included first by `runtests.jl`.
-- `test/test_*.jl`: one file per source file; `test_causal.jl` (numeric observe-versus-do,
-  soft interventions), `test_properties.jl` (random DAGs with `random_kernel`),
+- `test/test_*.jl`: one file per source file; `test_errors.jl` (the ADR 0013 hierarchy:
+  every owned exception is a `BayesNetError` and prints bare, `AnyBayesNetError` covers
+  every Graphviz exception and one error of each layer, the drift test that every
+  FiniteKernels exception type is re-exported and no Formats concrete type is, and `==`
+  against `hash`), `test_docstrings.jl` (every owned export has a docstring),
+  `test_causal.jl` (numeric observe-versus-do, soft interventions), `test_properties.jl`
+  (random DAGs with `random_kernel`),
   `test_formats_bridge.jl` (fixtures via `fixture_path`, asia oracle), `test_model_json.jl`,
   `test_modelcard.jl` (card construction, provenance, Markdown headings, JSON round trip and
   card-less backwards compatibility);
@@ -263,18 +278,30 @@ ADR rather than a rewrite of the historical ADR 0005.
   names (`tensor_space`, `compose_kernel`, `tensor_kernel`, `identity_kernel`, `copy_kernel`,
   `discard_kernel`, `swap_kernel`, `apply`) and `DEFAULT_ATOL`. Use those, not Catlab's
   `compose` / `otimes` / `mcopy` / `delete`, which exist only once `MarkovCategories.jl` is
-  loaded. From ACSets: `nparts`, `parts`, `subpart`, `incident`, `has_subpart`, `add_part!`,
-  `set_subpart!`, `cascading_rem_part!` and `acset_schema` (the README Quick Start uses it).
-  Keep this list and the `export` block in `src/BayesianNetworks.jl` in step.
-- Name clashes with the siblings: of the names this package also defines,
-  BayesianNetworkFormats exports `validate`, `topological_order`, `joint_distribution`,
-  `marginal` and `NotNormalizedError`. `using FiniteKernels` is blanket, while
-  BayesianNetworkFormats is imported name by name (`NetworkIR`, the node types,
-  `read_network`, `write_network`, `fixture_path`) and otherwise qualified. FiniteKernels'
-  normalisation error is `KernelNormalizationError` (SPEC §54); only BayesianNetworkFormats
-  has a `NotNormalizedError`, and neither is re-exported here. `validate`, `is_isomorphic`
-  and `to_graphviz` are this package's own functions now, not Catlab's;
-  `CategoricalBayesianNetworks.jl` and `InfluenceDiagrams.jl` import them from here.
+  loaded. Because the kernel API is re-exported, so is every exception type FiniteKernels
+  exports (ADR 0013, rule 3): the root `FiniteKernelsError` and `InvalidAxisError`,
+  `KernelShapeError`, `KernelEntryError`, `KernelNormalizationError` and
+  `SpaceMismatchError`; `test/test_errors.jl` fails when FiniteKernels exports one this
+  package does not. From BayesianNetworkFormats: `NetworkIR` and `fixture_path` (the bridge)
+  and the root `BayesianNetworkFormatsError` only, never Formats' concrete error types: the
+  conformance adapters load this package with `using`, and the inspect adapter records
+  Formats' errors as `BayesianNetworkFormats.ParseError` and so on, which a re-export would
+  silently turn into bare names. From ACSets: `nparts`, `parts`, `subpart`, `incident`,
+  `has_subpart`, `add_part!`, `set_subpart!`, `cascading_rem_part!` and `acset_schema` (the
+  README Quick Start uses it). Keep this list and the `export` block in
+  `src/BayesianNetworks.jl` in step.
+- Name clashes with the siblings: of the names this package exports, BayesianNetworkFormats
+  exports `validate`, `topological_order`, `joint_distribution`, `marginal` and `nstates` as
+  different functions. `using FiniteKernels` is blanket, while BayesianNetworkFormats is
+  imported name by name (`NetworkIR`, the node types, `read_network`, `write_network`,
+  `fixture_path`, `BayesianNetworkFormatsError`) and otherwise qualified. The three layers'
+  normalisation errors (ADR 0007, ADR 0013) are Formats' `NotNormalizedError` (a file row),
+  FiniteKernels' `KernelNormalizationError` (a kernel; SPEC §54) and this package's
+  `UnnormalizedKernelError` (a bound mechanism). `KernelNormalizationError` is re-exported
+  here with FiniteKernels' other error types; `NotNormalizedError` is not, like every
+  concrete Formats error. `validate`, `is_isomorphic` and `to_graphviz` are this package's
+  own functions now, not Catlab's; `CategoricalBayesianNetworks.jl` and
+  `InfluenceDiagrams.jl` import them from here.
 
 ## Graphviz and CatColab: what to know
 

@@ -6,6 +6,59 @@ envelope that records the format name and schema version (SPEC §48).
 const JSON_FORMAT = "bayesnet-acset"
 const JSON_SCHEMA_VERSION = "0.1"
 
+# Decoding failures
+###################
+
+# A JSON document that cannot be decoded raises `FormatError`, selectively: only the
+# conditions below are converted, where they arise, and everything else, `BayesNetError`s
+# included, propagates unchanged. There is no catch-all, which would also turn a
+# `MethodError` or an `InterruptException` into a `FormatError`.
+#
+# - JSON3's `ArgumentError` for text that is not JSON, at every `JSON3.read` of a document
+#   (`_read_json`, which InfluenceDiagrams.jl's readers call too).
+# - In the record decoders (the card, the kernel records and history of
+#   `parse_json_model`, and the CatColab and presentation readers): the `KeyError` of a
+#   missing key, and the `ArgumentError` of an unknown `KernelRef` type or of an
+#   unparsable time (`_decode_ref`, `_decode_time`). `_kernel_ref_from` itself keeps the
+#   `ArgumentError`, which the direct StructTypes path raises.
+# - In a kernel record, also the `DimensionMismatch` of a table whose length does not
+#   match its `"size"`, and the FiniteKernels errors of an invalid space or table.
+#
+# Two known exceptions are left to a later change: a JSON value of the wrong type raises
+# the error of the failed conversion (a number where a string is expected gives a
+# `MethodError` from `String`), and an error inside an ACSet body comes unchanged from
+# ACSets' `parse_json_acset`.
+
+# Run `f()`, and report an exception of type `T` as a `FormatError` about `what`.
+function _decoding(f, ::Type{T}, what::AbstractString) where {T}
+    try
+        return f()
+    catch e
+        e isa T || rethrow()
+        throw(FormatError(string(what, ": ", _decoding_message(e))))
+    end
+end
+
+_decoding_message(e::KeyError) = "missing key \"$(e.key)\""
+_decoding_message(e::ArgumentError) = rstrip(e.msg)
+_decoding_message(e) = sprint(showerror, e)
+
+function _read_json(str::AbstractString)
+    return _decoding(() -> JSON3.read(str), ArgumentError, "the text is not JSON")
+end
+_decode_ref(x, what) = _decoding(() -> _kernel_ref_from(x), ArgumentError, what)
+function _decode_time(t, what)
+    return _decoding(() -> DateTime(t), ArgumentError, "$what: time $(repr(t))")
+end
+
+# FiniteKernels' exception types, which a kernel record reaches through `FiniteAxis`,
+# `FiniteSpace` and `FiniteKernel`.
+const _FINITE_KERNELS_ERRORS = Union{FiniteKernels.InvalidAxisError,
+                                     FiniteKernels.KernelShapeError,
+                                     FiniteKernels.KernelEntryError,
+                                     FiniteKernels.KernelNormalizationError,
+                                     FiniteKernels.SpaceMismatchError}
+
 """
     json_bayesnet(bn) -> String
 
@@ -23,11 +76,12 @@ end
     parse_json_bayesnet(str; type = BayesNet) -> type
 
 Parse a JSON string produced by [`json_bayesnet`](@ref) into a network of the given
-ACSet `type`. Throws [`FormatError`](@ref) if the envelope is missing or names another
-format or schema version.
+ACSet `type`. Throws [`FormatError`](@ref) if `str` is not JSON, or if the envelope is
+missing or names another format or schema version. An error inside the `"acset"` body is
+not converted: it comes unchanged from ACSets' `parse_json_acset`.
 """
 function parse_json_bayesnet(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
-    return _parse_envelope(JSON3.read(str), type)
+    return _parse_envelope(_read_json(str), type)
 end
 
 function _parse_envelope(obj, type)
@@ -57,10 +111,11 @@ end
 """
     read_json_bayesnet(path; type = BayesNet) -> type
 
-Read a network written by [`write_json_bayesnet`](@ref).
+Read a network written by [`write_json_bayesnet`](@ref). Errors as for
+[`parse_json_bayesnet`](@ref).
 """
 function read_json_bayesnet(path::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
-    return _parse_envelope(JSON3.read(read(path, String)), type)
+    return _parse_envelope(_read_json(read(path, String)), type)
 end
 
 """
@@ -159,17 +214,18 @@ function _json_provenance(p::ParameterProvenance)
             notes=p.notes)
 end
 
-function _parse_provenance(p)
+function _parse_provenance(p, what)
     ts = _ref_field(p, :timestamp)
     return ParameterProvenance(; source_type=Symbol(_ref_field(p, :source_type)),
                                citation=String(_ref_field(p, :citation)),
                                dataset=String(_ref_field(p, :dataset)),
                                estimator=String(_ref_field(p, :estimator)),
                                expert=String(_ref_field(p, :expert)),
-                               timestamp=ts === nothing ? nothing : DateTime(ts),
+                               timestamp=ts === nothing ? nothing : _decode_time(ts, what),
                                notes=String(_ref_field(p, :notes)))
 end
 
+# The `"card"` section; the caller reports a missing key as a `FormatError`.
 function _parse_card(c)
     return ModelCard(; name=Symbol(_ref_field(c, :name)),
                      model_version=String(_ref_field(c, :model_version)),
@@ -191,10 +247,12 @@ function _parse_card(c)
                                                            for (x, t) in _ref_field(c,
                                                                                     :state_definitions)),
                      mechanisms=Symbol[Symbol(x) for x in _ref_field(c, :mechanisms)],
-                     kernel_refs=Dict{Symbol,KernelRef}(Symbol(k) => _kernel_ref_from(r)
+                     kernel_refs=Dict{Symbol,KernelRef}(Symbol(k) => _decode_ref(r,
+                                                                                 "the card, kernel_refs entry $k")
                                                         for (k, r) in _ref_field(c,
                                                                                  :kernel_refs)),
-                     provenance=Dict{Symbol,ParameterProvenance}(Symbol(k) => _parse_provenance(p)
+                     provenance=Dict{Symbol,ParameterProvenance}(Symbol(k) => _parse_provenance(p,
+                                                                                                "the card, provenance of $k")
                                                                  for (k, p) in
                                                                      _ref_field(c,
                                                                                 :provenance)),
@@ -206,7 +264,8 @@ function _parse_card(c)
                      intended_use=String(_ref_field(c, :intended_use)),
                      limitations=String(_ref_field(c, :limitations)),
                      license=String(_ref_field(c, :license)),
-                     history=ModelEvent[_parse_event(e) for e in _ref_field(c, :history)])
+                     history=ModelEvent[_parse_event(e, "the card, history record $i")
+                                        for (i, e) in enumerate(_ref_field(c, :history))])
 end
 
 """
@@ -228,10 +287,15 @@ end
 The [`ModelCard`](@ref) of a document written by [`json_card`](@ref) or by
 [`json_model`](@ref) with a `card`, and `nothing` for a document without a `"card"`
 section (every model file written before cards existed). The envelope is checked as in
-[`parse_json_bayesnet`](@ref) ([`FormatError`](@ref)).
+[`parse_json_bayesnet`](@ref). Text that is not JSON, and a card with a missing key, an
+unknown [`KernelRef`](@ref) type or an unparsable time, raise [`FormatError`](@ref). A
+JSON value of the wrong type is not converted and raises the error of the failed
+conversion (a number where a string is expected gives a `MethodError` from `String`), and
+a provenance `source_type` outside [`SOURCE_TYPES`](@ref) raises the `ArgumentError` of
+[`ParameterProvenance`](@ref).
 """
 function parse_json_card(str::AbstractString)
-    obj = JSON3.read(str)
+    obj = _read_json(str)
     obj isa AbstractDict || throw(FormatError("expected a JSON object envelope"))
     for key in (:format, :schema_version)
         haskey(obj, key) || throw(FormatError("envelope is missing the \"$key\" key"))
@@ -239,7 +303,7 @@ function parse_json_card(str::AbstractString)
     obj[:format] == JSON_FORMAT ||
         throw(FormatError("format is \"$(obj[:format])\", expected \"$JSON_FORMAT\""))
     haskey(obj, :card) || return nothing
-    return _parse_card(obj[:card])
+    return _decoding(() -> _parse_card(obj[:card]), KeyError, "the card")
 end
 
 """
@@ -247,7 +311,7 @@ end
 
 The [`ModelCard`](@ref) stored in the file at `path`, or `nothing` when it has no
 `"card"` section. Companion of [`read_json_model`](@ref), which reads the model from the
-same file.
+same file. Errors as for [`parse_json_card`](@ref).
 """
 read_json_card(path::AbstractString) = parse_json_card(read(path, String))
 
@@ -271,18 +335,23 @@ function _parse_axis(a)
 end
 _parse_space(v) = FiniteSpace(FiniteAxis[_parse_axis(a) for a in v])
 
-function _parse_record(r)
+function _parse_record(r, what)
     r === nothing && return nothing
     return MechanismRecord(Symbol(_ref_field(r, :name)),
-                           _kernel_ref_from(_ref_field(r, :kernel_ref)),
+                           _decode_ref(_ref_field(r, :kernel_ref), what),
                            Symbol[Symbol(s) for s in _ref_field(r, :inputs)])
 end
 
-function _parse_event(e)
-    return ModelEvent(Symbol(_ref_field(e, :kind)), Symbol(_ref_field(e, :target)),
-                      _parse_record(_ref_field(e, :removed)),
-                      _parse_record(_ref_field(e, :added)),
-                      String(_ref_field(e, :note)), DateTime(_ref_field(e, :time)))
+# One history record, which `what` names in the `FormatError` of a record that cannot be
+# decoded.
+function _parse_event(e, what)
+    return _decoding(KeyError, what) do
+        return ModelEvent(Symbol(_ref_field(e, :kind)), Symbol(_ref_field(e, :target)),
+                          _parse_record(_ref_field(e, :removed), what),
+                          _parse_record(_ref_field(e, :added), what),
+                          String(_ref_field(e, :note)),
+                          _decode_time(_ref_field(e, :time), what))
+    end
 end
 
 """
@@ -297,10 +366,21 @@ one the model was bound with: a model read from a format file is bound at the to
 `read_bayesnet` used, and rounded CPTs are not renormalised, so parsing such a document
 back at the default tolerance would reject it. A kernel outside the tolerance raises
 [`FormatError`](@ref).
+
+A document that cannot be decoded raises [`FormatError`](@ref) too: text that is not
+JSON; a kernel or history record with a missing key or an unknown [`KernelRef`](@ref)
+type; a history record whose time does not parse; and a kernel record whose table does
+not have the length its `"size"` gives, does not fit its spaces or has an entry that is
+not a probability. Two failures are not converted: a JSON value of the wrong type raises
+the error of the failed conversion (a number where a string is expected gives a
+`MethodError` from `String`), and an error inside the `"acset"` body comes unchanged from
+ACSets' `parse_json_acset`. A `BayesNetError` raised while the model is built, such as
+[`UnknownStateError`](@ref) for evidence on a state the variable does not have, passes
+through unchanged.
 """
 function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet,
                           atol::Real=DEFAULT_ATOL)
-    obj = JSON3.read(str)
+    obj = _read_json(str)
     bn = _parse_envelope(obj, type)
     spaces = syntax_spaces(bn)
     kernels = Dict{KernelRef,FiniteKernel}()
@@ -309,23 +389,31 @@ function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=Ba
         for (x, labels) in get(sem, :spaces, Dict())
             spaces[Symbol(x)] = FiniteSpace(Symbol(x), Symbol[Symbol(l) for l in labels])
         end
-        for k in get(sem, :kernels, [])
-            dom, codom = _parse_space(k[:dom]), _parse_space(k[:codom])
-            table = reshape(Float64[Float64(v) for v in k[:table]], Tuple(Int.(k[:size])))
-            ref = _kernel_ref_from(k[:ref])
-            kernels[ref] = try
-                FiniteKernel(dom, codom, table; atol=atol)
-            catch e
-                e isa FiniteKernels.KernelNormalizationError || rethrow()
-                throw(FormatError("the kernel $(ref) is not normalised within atol=$(atol) " *
-                                  "(largest row-mass deviation $(e.max_deviation)); pass the " *
-                                  "atol the model was bound with"))
+        for (i, k) in enumerate(get(sem, :kernels, []))
+            ref = _decoding(() -> _decode_ref(k[:ref], "kernel record $i"), KeyError,
+                            "kernel record $i")
+            kernels[ref] = _decoding(Union{KeyError,DimensionMismatch,
+                                           _FINITE_KERNELS_ERRORS},
+                                     "the kernel $(ref)") do
+                dom, codom = _parse_space(k[:dom]), _parse_space(k[:codom])
+                table = reshape(Float64[Float64(v) for v in k[:table]],
+                                Tuple(Int.(k[:size])))
+                try
+                    return FiniteKernel(dom, codom, table; atol=atol)
+                catch e
+                    e isa FiniteKernels.KernelNormalizationError || rethrow()
+                    throw(FormatError("the kernel $(ref) is not normalised within " *
+                                      "atol=$(atol) (largest row-mass deviation " *
+                                      "$(e.max_deviation)); pass the atol the model was " *
+                                      "bound with"))
+                end
             end
         end
     end
     evidence = Dict{Symbol,Symbol}(Symbol(k) => Symbol(v)
                                    for (k, v) in get(obj, :evidence, Dict()))
-    history = ModelEvent[_parse_event(e) for e in get(obj, :history, [])]
+    history = ModelEvent[_parse_event(e, "history record $i")
+                         for (i, e) in enumerate(get(obj, :history, []))]
     extras = _from_json_extras(get(obj, :extras, Dict()))
     return BayesModel(bn; spaces=spaces, kernels=kernels, evidence=evidence,
                       history=history, extras=extras)
@@ -350,7 +438,8 @@ end
     read_json_model(path; type = BayesNet) -> BayesModel
 
 Read a model written by [`write_json_model`](@ref). `atol` is passed to
-[`parse_json_model`](@ref) and must match the tolerance the model was bound with.
+[`parse_json_model`](@ref) and must match the tolerance the model was bound with. Errors
+as for [`parse_json_model`](@ref).
 """
 function read_json_model(path::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet,
                          atol::Real=DEFAULT_ATOL)

@@ -198,7 +198,7 @@ end
 _field(x, key::AbstractString) = haskey(x, key) ? x[key] : x[Symbol(key)]
 _hasfield(x, key::AbstractString) = haskey(x, key) || haskey(x, Symbol(key))
 
-_as_document(doc::AbstractString) = JSON3.read(doc)
+_as_document(doc::AbstractString) = _read_json(doc)
 _as_document(doc) = doc
 
 # The formal judgments of a document, in cell order.
@@ -215,9 +215,13 @@ function _judgments(doc)
 end
 
 # The generators of a schema document or `catcolab_model` shape as
-# `(id, label, kind, dom_id, cod_id)`.
+# `(id, label, kind, dom_id, cod_id)`. A missing key is a `FormatError`.
 function _generators(doc)
-    doc = _as_document(doc)
+    document = _as_document(doc)
+    return _decoding(() -> _read_generators(document), KeyError, "the CatColab document")
+end
+
+function _read_generators(doc)
     if _hasfield(doc, "obGenerators")
         obs = [(String(_field(o, "id")), String(only(_field(o, "label"))),
                 String(_field(_field(o, "obType"), "content")), nothing, nothing)
@@ -268,7 +272,10 @@ shape, or their JSON text) back into an ACSets `BasicSchema`, mirroring
 `CatlabExt.model_to_schema` in CatColab: `Entity` objects become objects, `AttrType`
 objects attribute types, `Attr` morphisms attributes and every other morphism a hom.
 Inverse of [`catcolab_schema_document`](@ref) and [`catcolab_model`](@ref); a document
-of another shape is a [`FormatError`](@ref).
+of another shape, text that is not JSON and a document with a missing key are a
+[`FormatError`](@ref). A JSON value of the wrong type is not converted and raises the
+error of the failed conversion (a number where a string is expected gives a
+`MethodError` from `String`).
 """
 function parse_catcolab_schema(doc)
     names = Dict{String,Symbol}()
@@ -333,6 +340,10 @@ id}`. Labels are the variable, `Variable.state`, mechanism and `Mechanism.positi
 names, which is how attribute values travel (CatColab diagrams carry no attribute
 columns). `diagramIn` links the model by a deterministic `_id`; replace it with the id
 CatColab assigned to the uploaded schema document. Export-only.
+
+`schema_doc` is read as by [`parse_catcolab_schema`](@ref), with the same errors; a
+schema document without an object or morphism of the network's schema, or without a
+`"name"`, is a [`FormatError`](@ref) as well.
 """
 function catcolab_instance_document(bn::AbstractBayesNet, schema_doc;
                                     name::AbstractString="BayesNet instance")
@@ -367,11 +378,16 @@ function catcolab_instance_document(bn::AbstractBayesNet, schema_doc;
             push!(cells, _formal_cell(name, "morphism", "$f/$p", content))
         end
     end
-    link = OrderedDict{String,Any}("_id" => catcolab_uuid(String(_field(schema_doc, "name")),
+    link = OrderedDict{String,Any}("_id" => catcolab_uuid(_document_name(schema_doc),
                                                           "document"),
                                    "_version" => nothing, "_server" => nothing,
                                    "type" => "diagram-in")
     return _document("diagram", name, cells; diagramIn=link)
+end
+
+function _document_name(doc)
+    return _decoding(() -> String(_field(doc, "name")), KeyError,
+                     "the CatColab schema document")
 end
 
 # Markov presentations
@@ -409,25 +425,33 @@ presentation_json(m::BayesModel) = presentation_json(syntax(m))
 
 Read a network from the JSON written by [`presentation_json`](@ref): one variable per
 object and one mechanism per generator (a generator must have exactly one codomain
-object). A wrong `"format"` is a [`FormatError`](@ref).
+object). A wrong `"format"`, text that is not JSON, a missing key and an unknown
+[`KernelRef`](@ref) type are a [`FormatError`](@ref). A JSON value of the wrong type is
+not converted and raises the error of the failed conversion (a number where a string is
+expected gives a `MethodError` from `String`). The errors of building the network, such
+as [`UnknownVariableError`](@ref) for a generator whose object is not declared, pass
+through unchanged.
 """
 function parse_presentation_json(str::AbstractString)
-    obj = JSON3.read(str)
+    obj = _read_json(str)
     _hasfield(obj, "format") && String(_field(obj, "format")) == PRESENTATION_FORMAT ||
         throw(FormatError("expected format \"$PRESENTATION_FORMAT\""))
-    bn = BayesNet()
-    for o in _field(obj, "objects")
-        add_variable!(bn, Symbol(_field(o, "name"));
-                      states=Symbol[Symbol(s) for s in _field(o, "states")])
+    return _decoding(KeyError, "the presentation document") do
+        bn = BayesNet()
+        for o in _field(obj, "objects")
+            add_variable!(bn, Symbol(_field(o, "name"));
+                          states=Symbol[Symbol(s) for s in _field(o, "states")])
+        end
+        for g in _field(obj, "generators")
+            cod = _field(g, "cod")
+            length(cod) == 1 ||
+                throw(FormatError("generator $(_field(g, "name")) must have exactly one codomain object"))
+            add_mechanism!(bn, Symbol(only(cod));
+                           inputs=Symbol[Symbol(x) for x in _field(g, "dom")],
+                           name=Symbol(_field(g, "name")),
+                           kernel_ref=_decode_ref(_field(g, "kernel_ref"),
+                                                  "generator $(_field(g, "name"))"))
+        end
+        return bn
     end
-    for g in _field(obj, "generators")
-        cod = _field(g, "cod")
-        length(cod) == 1 ||
-            throw(FormatError("generator $(_field(g, "name")) must have exactly one codomain object"))
-        add_mechanism!(bn, Symbol(only(cod));
-                       inputs=Symbol[Symbol(x) for x in _field(g, "dom")],
-                       name=Symbol(_field(g, "name")),
-                       kernel_ref=_kernel_ref_from(_field(g, "kernel_ref")))
-    end
-    return bn
 end

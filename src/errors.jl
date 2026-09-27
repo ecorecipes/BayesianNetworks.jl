@@ -235,7 +235,21 @@ end
 """
     FormatError(message)
 
-A serialised network could not be parsed: wrong envelope, format name or schema version.
+A serialised network, model or document could not be parsed. The JSON readers
+([`parse_json_bayesnet`](@ref), [`parse_json_model`](@ref), [`parse_json_card`](@ref),
+their file variants, [`parse_catcolab_schema`](@ref),
+[`catcolab_instance_document`](@ref), [`parse_presentation_json`](@ref), and
+InfluenceDiagrams.jl's readers) raise it for text that is not JSON; a wrong envelope,
+format name or schema version; a record with a missing key, an unknown
+[`KernelRef`](@ref) type or a time that does not parse; and a kernel record whose table
+does not have the length its `"size"` gives, does not fit its spaces or is not a
+stochastic kernel within `atol`.
+
+Two failures are not converted yet, and raise the error of the code that meets them: a
+JSON value of the wrong type (a number where a string is expected gives a `MethodError`
+from `String`), and an error inside the `"acset"` body of an envelope, which ACSets'
+`parse_json_acset` decodes. Any other exception passes through unchanged, a
+`BayesNetError` raised while the network or model is built among them.
 """
 struct FormatError <: BayesNetError
     message::String

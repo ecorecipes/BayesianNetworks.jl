@@ -94,3 +94,17 @@
                                                           atol=1e-6)
     end
 end
+
+@testset "joint state counts do not overflow" begin
+    # The count was an Int128 product, which wraps past 2^127: 2^200 states came out as 0
+    # and passed the max_states guard, failing later with "invalid Array dimensions".
+    let v = [Symbol("X", i) for i in 1:200]
+        m = BayesModel(bayesnet([x => [:a, :b] for x in v]...;
+                                mechanisms=[x => () for x in v]))
+        for x in v
+            m = bind_cpt(m, x => [0.5, 0.5])
+        end
+        @test_throws ModelTooLargeError joint_distribution(m)
+        @test_throws ModelTooLargeError marginal(m, :X1; evidence=Dict(:X2 => :a))
+    end
+end

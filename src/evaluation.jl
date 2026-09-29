@@ -18,7 +18,7 @@ function _closed_semantics(m::BayesModel, max_states::Integer, atol::Real=DEFAUL
     validate(m; closed=true, unique_names=true, semantics=true, atol=atol)
     bn = m.syntax
     order = topological_order(bn)
-    n = prod(Int128[nstates(bn, v) for v in order]; init=Int128(1))
+    n = prod(BigInt[nstates(bn, v) for v in order]; init=big(1))
     n <= max_states || throw(ModelTooLargeError(Int(min(n, typemax(Int))), max_states))
     return order
 end

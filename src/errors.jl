@@ -541,36 +541,23 @@ end
 """
     ImpossibleEvidenceError(evidence)
 
-The evidence has zero computed probability under the model, so conditioning on it is
+The evidence has probability exactly zero under the model, so conditioning on it is
 undefined. `evidence` maps each conditioned variable to its state: the observations, or
 for [`conditional`](@ref) the configuration of the `given` variables that failed. It is
 empty when nothing was observed and the model or factor graph itself has zero total mass,
 which only a raw factor graph can have; the message then says so.
 
-A zero computed probability is usually an exact zero, but not always. The paths that form
-the evidence mass as a single binary64 number also raise this error for:
+Zero means exactly zero (ADR 0014). A path that forms the evidence mass as a binary64
+number never reports a mass below the normal range as zero: a positive probability can
+underflow there, so the path recomputes the answer in the log domain or in exact
+arithmetic, and raises this error only when that computation proves the mass is zero. A
+mass that tolerated negative entries (ADR 0007) leave undetermined is
+[`IndeterminatePosteriorError`](@ref), not this error.
 
-- a positive probability that underflowed to zero, as the probability of very rare
-  evidence can;
-- a mass that tolerated rounding drove to zero or below: validation accepts kernel
-  entries down to `-atol` (ADR 0007), and such entries can make the computed mass
-  non-positive.
-
-Those paths are [`marginal`](@ref) and [`conditional`](@ref) (with `on_zero = :error`)
-here; variable elimination, the junction tree, brute force and belief propagation (with
-`check_evidence = true`, or when a conditioned scalar is zero) in
-BayesianNetworkInference; and the default decision-elimination, exhaustive and
-`expected_utility` paths of InfluenceDiagrams (ADR 0012).
-
-To tell the cases apart, ask a path that does not form that binary64 mass:
-
-- BayesianNetworkInference's `log_evidence_probability` returns `-Inf` for an exact zero
-  and a finite logarithm for a probability that underflowed;
-- its log-domain backends `LogVariableElimination` and `LogJunctionTree` answer a query
-  whose evidence probability underflowed, raise this error only for an exact zero, and
-  reject a negative entry with `LogFactorDomainError` instead of computing with it;
-- the InfluenceDiagrams solvers take `stable = true`, which computes the mass exactly or
-  in the log domain and so does not report an underflowed probability as zero.
+This holds for [`marginal`](@ref) and [`conditional`](@ref) here, for every backend of
+BayesianNetworkInference and for every solver of InfluenceDiagrams (ADR 0012).
+BayesianNetworkInference's `log_evidence_probability` returns `-Inf` for the same
+evidence instead of raising, for callers that want to test feasibility first.
 """
 struct ImpossibleEvidenceError <: BayesNetError
     evidence::Dict{Symbol,Symbol}
@@ -660,12 +647,9 @@ function Base.showerror(io::IO, e::ImpossibleEvidenceError)
               "factor graph has zero total mass")
     else
         print(io, "ImpossibleEvidenceError: the evidence ", e.evidence,
-              " has zero computed probability under the model")
+              " has probability exactly zero under the model")
     end
-    return print(io, ". Besides an exact zero, this can be a positive mass that ",
-                 "underflowed, or a mass that tolerated rounding drove to zero or below; ",
-                 "LogVariableElimination, LogJunctionTree, log_evidence_probability and ",
-                 "stable=true tell these apart")
+    return nothing
 end
 
 function Base.showerror(io::IO, e::IndeterminatePosteriorError)

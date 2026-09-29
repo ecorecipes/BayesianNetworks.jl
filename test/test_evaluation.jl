@@ -89,10 +89,10 @@ using Random
                                                       :Occupancy)
         @test occursin("wet",
                        sprint(showerror, ImpossibleEvidenceError(Dict(:Climate => :wet))))
-        # The message says "computed": a positive probability can underflow to zero.
+        # Zero means exactly zero: underflow is recomputed, never reported (ADR 0014).
         msg = sprint(showerror, ImpossibleEvidenceError(Dict(:Climate => :wet)))
-        @test occursin("zero computed probability", msg)
-        @test occursin("underflowed", msg) && occursin("LogVariableElimination", msg)
+        @test occursin("probability exactly zero", msg)
+        @test !occursin("underflow", msg)
         # With no evidence, the zero mass belongs to the model or factor graph itself.
         empty_msg = sprint(showerror, ImpossibleEvidenceError(Dict{Symbol,Symbol}()))
         @test startswith(empty_msg, "ImpossibleEvidenceError: ")

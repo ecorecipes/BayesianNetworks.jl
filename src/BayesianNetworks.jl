@@ -88,7 +88,8 @@ export UnknownVariableError, UnknownMechanismError, CyclicBayesNetError,
        NameClashError, NoEvidenceError, MissingKernelError, KernelBindingError,
        UnnormalizedKernelError, InvalidKernelEntryError, ProofCertificateError,
        OpenCertificateError,
-       ImpossibleEvidenceError, ModelTooLargeError, UnsupportedNodeKindError,
+       ImpossibleEvidenceError, IndeterminatePosteriorError, ModelTooLargeError,
+       UnsupportedNodeKindError,
        WiringDiagramError, DynamicTemplateError, HorizonError, NotUnrolledError
 # construction.jl
 export variable_id, mechanism_id, add_variable!, add_state!, add_mechanism!, add_input!,

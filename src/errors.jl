@@ -577,6 +577,25 @@ struct ImpossibleEvidenceError <: BayesNetError
 end
 
 """
+    IndeterminatePosteriorError(evidence, detail)
+
+The posterior is not determined by the model within its tolerance. A validated model may
+hold entries down to `-atol` (ADR 0007), because rounded tables produce them. Such entries
+can drive a computed evidence mass to zero or below, or a posterior cell below zero, when
+the evidence is so improbable that the tolerance is no longer small beside it. The
+posterior's sign is then an artefact of the rounding, not a property of the model, so no
+posterior is returned (ADR 0014). Tolerated entries are never silently clamped or
+renormalised (ADR 0011). `evidence` is the evidence; `detail` says which condition fired.
+
+Removing the negative entries from the model's tables (or binding them at a tolerance that
+rejects them) resolves it.
+"""
+struct IndeterminatePosteriorError <: BayesNetError
+    evidence::Dict{Symbol,Symbol}
+    detail::String
+end
+
+"""
     ModelTooLargeError(nstates, limit)
 
 A brute-force evaluation was asked for a model with `nstates` joint states, more than
@@ -647,6 +666,15 @@ function Base.showerror(io::IO, e::ImpossibleEvidenceError)
                  "underflowed, or a mass that tolerated rounding drove to zero or below; ",
                  "LogVariableElimination, LogJunctionTree, log_evidence_probability and ",
                  "stable=true tell these apart")
+end
+
+function Base.showerror(io::IO, e::IndeterminatePosteriorError)
+    return print(io, "IndeterminatePosteriorError: under the evidence ",
+                 sort!(collect(e.evidence); by=first),
+                 " the posterior is not determined by the model within its tolerance: ",
+                 e.detail,
+                 ". The model has entries in [-atol, 0); remove them, or bind at a ",
+                 "tolerance that rejects them")
 end
 
 function Base.showerror(io::IO, e::ModelTooLargeError)

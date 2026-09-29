@@ -204,8 +204,19 @@ _evidence_dict(ev::AbstractDict{Symbol,Symbol}) = Dict{Symbol,Symbol}(ev)
 _evidence_dict(ev::AbstractVector{<:Pair{Symbol,Symbol}}) = Dict{Symbol,Symbol}(ev)
 _evidence_dict(ev::Pair{Symbol,Symbol}) = Dict{Symbol,Symbol}(ev)
 
+# Evidence mass (ADR 0014). A binary64 total is trusted only when it is a normal positive
+# number. Zero, a subnormal, a negative or a non-finite total does not say whether the
+# evidence is impossible -- a positive probability that underflowed is zero too -- so the
+# evaluators recompute such a case in the log domain (`_log_joint_marginal`), where only an
+# exact zero gives `-Inf` and so an `ImpossibleEvidenceError`.
+_reliable_mass(t::Real) = isfinite(t) && t >= floatmin(Float64)
+
 # Condition a state `I -> X1 ⊗ ... ⊗ Xn` on evidence over its axes and renormalise.
-function _condition(J::FiniteKernel, ev::Dict{Symbol,Symbol})
+# Returns `nothing` when the conditioned total is not a trustworthy binary64 number, so the
+# caller can fall back to the log domain. A joint with negative cells comes from tolerated
+# entries in [-atol, 0) (ADR 0007); its posterior is indeterminate when the evidence mass is
+# within the tolerance budget of zero, or when a posterior cell comes out negative.
+function _condition(J::FiniteKernel, ev::Dict{Symbol,Symbol}, atol::Real)
     isempty(ev) && return J
     T = copy(convert(Array{Float64}, J.table))
     axes = factors(J.codom)
@@ -219,9 +230,93 @@ function _condition(J::FiniteKernel, ev::Dict{Symbol,Symbol})
         end
     end
     total = sum(T)
-    total > 0 || throw(ImpossibleEvidenceError(ev))
+    _reliable_mass(total) || return nothing
+    if any(<(0), J.table)
+        budget = _joint_atol(atol, ndims(J.table))
+        total > budget ||
+            throw(IndeterminatePosteriorError(ev,
+                                              "the evidence mass $(total) is within the tolerance budget $(budget) of zero"))
+        v = minimum(T)
+        v < 0 &&
+            throw(IndeterminatePosteriorError(ev,
+                                              "a posterior cell is negative ($(v / total))"))
+    end
     # Dividing by the total normalises exactly, whatever the joint's own tolerance was.
     return FiniteKernel(FiniteSpace(), J.codom, T ./ total)
+end
+
+# The log of one joint entry, the product of every mechanism's entry at the joint assignment
+# `ci`. An exact zero gives `-Inf`. This is reached only when the binary64 mass was not
+# trustworthy, i.e. far below any tolerance budget, so a tolerated negative entry on a
+# configuration consistent with the evidence makes the posterior indeterminate.
+function _log_product(factors::Vector{_Factor}, ci::CartesianIndex, ev)
+    l = 0.0
+    for f in factors
+        idx = 1
+        @inbounds for j in eachindex(f.axes)
+            idx += f.strides[j] * (ci[f.axes[j]] - 1)
+        end
+        x = @inbounds f.table[idx]
+        x < 0 &&
+            throw(IndeterminatePosteriorError(ev,
+                                              "a tolerated negative entry ($(x)) lies on a configuration consistent with evidence whose mass is below binary64's normal range"))
+        x == 0 && return -Inf
+        l += log(x)
+    end
+    return l
+end
+
+# `log P(vars = cell, evidence)` for every cell of `vars`, and `log P(evidence)`, by
+# enumerating the joint in the log domain with a streaming log-sum-exp per cell. The
+# fallback of `marginal` and `conditional` when the binary64 mass is not trustworthy.
+function _log_joint_marginal(m::BayesModel, vars::AbstractVector{Symbol},
+                             ev::Dict{Symbol,Symbol}; max_states::Integer, atol::Real)
+    order = _closed_semantics(m, max_states, atol)
+    bn = m.syntax
+    pos = Dict{Int,Int}(v => i for (i, v) in enumerate(order))
+    dims = Tuple(nstates(bn, v) for v in order)
+    fs = _factors(bn, m.kernels, pos; atol=atol)
+    fixed = Pair{Int,Int}[]
+    for (x, s) in ev
+        has_variable(bn, x) || throw(UnknownVariableError(x))
+        v = variable_id(bn, x)
+        j = findfirst(==(s), states(bn, v))
+        j === nothing && throw(UnknownStateError(x, s))
+        push!(fixed, pos[v] => j)
+    end
+    qpos = Int[]
+    for x in vars
+        has_variable(bn, x) || throw(UnknownVariableError(x))
+        push!(qpos, pos[variable_id(bn, x)])
+    end
+    qdims = Tuple(dims[p] for p in qpos)
+    mx = fill(-Inf, qdims)
+    acc = zeros(Float64, qdims)
+    for ci in CartesianIndices(dims)
+        all(ci[p] == j for (p, j) in fixed) || continue
+        l = _log_product(fs, ci, ev)
+        l == -Inf && continue
+        q = CartesianIndex(ntuple(k -> ci[qpos[k]], length(qpos)))
+        if l > mx[q]
+            acc[q] = acc[q] * exp(mx[q] - l) + 1.0
+            mx[q] = l
+        else
+            acc[q] += exp(l - mx[q])
+        end
+    end
+    logtable = mx .+ log.(acc)
+    top = isempty(logtable) ? -Inf : maximum(logtable)
+    logtotal = top == -Inf ? -Inf : top + log(sum(exp.(logtable .- top)))
+    return logtable, logtotal
+end
+
+function _log_marginal(m::BayesModel, vars::AbstractVector{Symbol}, ev::Dict{Symbol,Symbol};
+                       max_states::Integer, atol::Real)
+    logtable, logtotal = _log_joint_marginal(m, vars, ev; max_states, atol)
+    logtotal == -Inf && throw(ImpossibleEvidenceError(ev))
+    bn = m.syntax
+    Y = FiniteSpace(FiniteAxis[axis(bn, variable_id(bn, x)) for x in vars])
+    return FiniteKernel(FiniteSpace(), Y, exp.(logtable .- logtotal); atol=atol)
 end
 
 function _axis_positions(X::FiniteSpace, vars)
@@ -241,10 +336,16 @@ end
 The posterior marginal `P(vars | evidence)` as a state `I → ⊗ vars` (axes in the order
 of `vars`), by brute force: the joint of the model is conditioned on the evidence (the
 model's own by default; pass `evidence = Dict()` for the prior marginal, or any
-dictionary or list of `:X => :x` pairs), renormalised
-([`ImpossibleEvidenceError`](@ref) if the evidence has zero computed probability) and
-summed over the other variables. Interventions are already in the syntax, so
+dictionary or list of `:X => :x` pairs), renormalised and summed over the other
+variables. Interventions are already in the syntax, so
 `marginal(do_intervention(m, :Y => :y), [:X])` is the interventional distribution.
+
+Evidence so improbable that its binary64 mass underflows (or is subnormal) is not treated
+as impossible: the conditioned marginal is recomputed by enumerating the joint in the log
+domain, and returned (ADR 0014). [`ImpossibleEvidenceError`](@ref) means the evidence has
+probability exactly zero under the model. A model with tolerated entries in `[-atol, 0)`
+raises [`IndeterminatePosteriorError`](@ref) when the evidence mass is within the
+tolerance budget of zero or a posterior cell comes out negative.
 
 # Example
 
@@ -264,8 +365,9 @@ julia> round.(marginal(observe(m, :Vegetation => :dense), :Occupancy).table; dig
 """
 function marginal(m::BayesModel, vars::AbstractVector{Symbol}; evidence=m.evidence,
                   max_states::Integer=DEFAULT_MAX_STATES, atol::Real=DEFAULT_ATOL)
-    J = _condition(joint_distribution(m; max_states=max_states, atol=atol),
-                   _evidence_dict(evidence))
+    ev = _evidence_dict(evidence)
+    J = _condition(joint_distribution(m; max_states=max_states, atol=atol), ev, atol)
+    J === nothing && return _log_marginal(m, vars, ev; max_states, atol)
     return marginal(J, _axis_positions(J.codom, vars))
 end
 marginal(m::BayesModel, x::Symbol; kw...) = marginal(m, [x]; kw...)
@@ -278,7 +380,9 @@ The conditional distribution `P(target | given, evidence)` as a kernel
 brute force from the conditioned joint. Extracting such a kernel from a joint state is
 disintegration in the sense of [ChoJacobs2019](@cite).
 
-For a configuration of `given` that has probability zero the conditional is undefined
+For a configuration of `given` that has probability zero the conditional is undefined. "Zero"
+means exactly zero: a column whose binary64 mass underflows is recomputed in the log domain
+and normalised, never filled in (ADR 0014),
 and `on_zero` says what to do with that column: `:uniform` (the default, kept for
 backwards compatibility) fills it with the uniform distribution so that the result is a
 normalised kernel, `:error` throws an [`ImpossibleEvidenceError`](@ref) naming that
@@ -311,13 +415,25 @@ function conditional(m::BayesModel, target, given; evidence=m.evidence,
     nt = length(ts)
     tdims = ntuple(identity, nt)
     denom = sum(T; dims=tdims)
+    # A column whose binary64 mass is zero or subnormal may be positive but underflowed.
+    # Recompute every column in the log domain, where only an exact zero is -Inf, so that
+    # `on_zero` applies to configurations of probability exactly zero and nothing else.
+    if any(d -> !_reliable_mass(d), denom)
+        logT, _ = _log_joint_marginal(m, vcat(ts, gs), _evidence_dict(evidence);
+                                      max_states, atol)
+        top = maximum(logT; dims=tdims)
+        logd = top .+ log.(sum(exp.(logT .- ifelse.(isinf.(top), 0.0, top)); dims=tdims))
+        T = exp.(logT .- ifelse.(isinf.(logd), 0.0, logd))
+        denom = ifelse.(isinf.(logd), 0.0, 1.0)
+    end
     ntarget = prod(size(T)[1:nt])
     undefined = on_zero === :uniform ? 1 / ntarget : NaN
     out = similar(T)
     for ci in CartesianIndices(T)
         d = denom[CartesianIndex(ntuple(i -> i <= nt ? 1 : ci[i], ndims(T)))]
         d > 0 || on_zero !== :error ||
-            throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(gs[i - nt] => labels(factors(M.codom)[i])[ci[i]]
+            throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(gs[i - nt] =>
+                                                                  labels(factors(M.codom)[i])[ci[i]]
                                                               for i in (nt + 1):ndims(T))))
         out[ci] = d > 0 ? T[ci] / d : undefined
     end

@@ -346,6 +346,7 @@ InvalidKernelEntryError
 ProofCertificateError
 OpenCertificateError
 ImpossibleEvidenceError
+IndeterminatePosteriorError
 ModelTooLargeError
 UnsupportedNodeKindError
 WiringDiagramError

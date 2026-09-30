@@ -322,9 +322,8 @@ format name or schema version; a record with a missing key, an unknown
 does not have the length its `"size"` gives, does not fit its spaces or is not a
 stochastic kernel within `atol`.
 
-Two failures are not converted yet, and raise the error of the code that meets them: a
-JSON value of the wrong type (a number where a string is expected gives a `MethodError`
-from `String`), and an error inside the `"acset"` body of an envelope, which ACSets'
+So are, since ADR 0015, a JSON value of the wrong type (a number where a string is
+expected) and an error inside the `"acset"` body of an envelope, which ACSets'
 `parse_json_acset` decodes. Any other exception passes through unchanged, a
 `BayesNetError` raised while the network or model is built among them.
 """
@@ -455,8 +454,10 @@ end
 A kernel or space bound to `variable` does not fit its mechanism. `what` is `:codom`
 (the kernel's codomain is not the variable's space), `:dom` (its domain is not the tensor
 of the parents' spaces in `input_position` order), `:table` (a CPT array has the wrong
-size; `expected` and `got` are sizes) or `:space` (a stored space differs from the
-variable's states in the syntax); `expected` and `got` are the two values compared.
+size; `expected` and `got` are sizes), `:space` (a stored space differs from the
+variable's states in the syntax) or `:intervention` (the mechanism is a hard intervention,
+whose `PointMassRef` is `got`: no kernel can be bound to it, and `soft_intervention`
+replaces it); `expected` and `got` are the two values compared.
 """
 struct KernelBindingError <: BayesNetError
     variable::Symbol
@@ -536,6 +537,16 @@ struct OpenCertificateError <: BayesNetError
     path::String
     name::Union{Nothing,Symbol}
     message::String
+end
+
+# Internal, never raised to a caller (ADR 0015): a value of the wrong JSON type in a decoded
+# document. `key` names the field and `expected` the JSON type wanted. The typed reads of
+# serialization.jl throw it, and the record decoders turn it into a `FormatError` that names
+# the record.
+struct _JSONShapeError <: BayesNetError
+    key::String
+    expected::String
+    value::Any
 end
 
 """

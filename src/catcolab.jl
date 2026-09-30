@@ -195,8 +195,24 @@ end
 # Reading documents back
 ########################
 
-_field(x, key::AbstractString) = haskey(x, key) ? x[key] : x[Symbol(key)]
-_hasfield(x, key::AbstractString) = haskey(x, key) || haskey(x, Symbol(key))
+# A field of a decoded document, by String or Symbol key. A record that is not an object, a
+# value of the wrong JSON type and a label that is not a one-element array are
+# `_JSONShapeError`s (serialization.jl), which the readers report as a `FormatError`.
+function _field(x, key::AbstractString)
+    x isa AbstractDict ||
+        throw(_JSONShapeError(string(key, " (its record)"), "an object", x))
+    return haskey(x, key) ? x[key] : x[Symbol(key)]
+end
+function _hasfield(x, key::AbstractString)
+    return x isa AbstractDict && (haskey(x, key) || haskey(x, Symbol(key)))
+end
+_str(x, key::AbstractString) = _as_string(_field(x, key), key)
+function _label(x)
+    label = _as_array(_field(x, "label"), "label")
+    length(label) == 1 ||
+        throw(_JSONShapeError("label", "an array of one string", label))
+    return _as_string(only(label), "label")
+end
 
 _as_document(doc::AbstractString) = _read_json(doc)
 _as_document(doc) = doc
@@ -206,9 +222,9 @@ function _judgments(doc)
     nb = _field(doc, "notebook")
     contents, order = _field(nb, "cellContents"), _field(nb, "cellOrder")
     out = Any[]
-    for id in order
+    for id in _as_array(order, "cellOrder")
         cell = _field(contents, string(id))
-        String(_field(cell, "tag")) == "formal" || continue
+        _str(cell, "tag") == "formal" || continue
         push!(out, _field(cell, "content"))
     end
     return out
@@ -218,38 +234,39 @@ end
 # `(id, label, kind, dom_id, cod_id)`. A missing key is a `FormatError`.
 function _generators(doc)
     document = _as_document(doc)
-    return _decoding(() -> _read_generators(document), KeyError, "the CatColab document")
+    return _decoding(() -> _read_generators(document), _SHAPE_ERRORS,
+                     "the CatColab document")
 end
 
 function _read_generators(doc)
     if _hasfield(doc, "obGenerators")
-        obs = [(String(_field(o, "id")), String(only(_field(o, "label"))),
-                String(_field(_field(o, "obType"), "content")), nothing, nothing)
-               for o in _field(doc, "obGenerators")]
-        mors = [(String(_field(m, "id")), String(only(_field(m, "label"))),
+        obs = [(_str(o, "id"), _label(o),
+                _str(_field(o, "obType"), "content"), nothing, nothing)
+               for o in _as_array(_field(doc, "obGenerators"), "obGenerators")]
+        mors = [(_str(m, "id"), _label(m),
                  _mor_kind(_field(m, "morType")),
-                 String(_field(_field(m, "dom"), "content")),
-                 String(_field(_field(m, "cod"), "content")))
-                for m in _field(doc, "morGenerators")]
+                 _str(_field(m, "dom"), "content"),
+                 _str(_field(m, "cod"), "content"))
+                for m in _as_array(_field(doc, "morGenerators"), "morGenerators")]
         return vcat(obs, mors)
     end
     _hasfield(doc, "notebook") ||
         throw(FormatError("expected a CatColab model document or a Model{obGenerators, morGenerators}"))
-    String(_field(doc, "type")) == "model" ||
+    _str(doc, "type") == "model" ||
         throw(FormatError("expected a CatColab document of type \"model\", got \"$(_field(doc, "type"))\""))
     gens = Any[]
     for j in _judgments(doc)
-        tag = String(_field(j, "tag"))
+        tag = _str(j, "tag")
         if tag == "object"
             push!(gens,
-                  (String(_field(j, "id")), String(_field(j, "name")),
-                   String(_field(_field(j, "obType"), "content")), nothing, nothing))
+                  (_str(j, "id"), _str(j, "name"),
+                   _str(_field(j, "obType"), "content"), nothing, nothing))
         elseif tag == "morphism"
             push!(gens,
-                  (String(_field(j, "id")), String(_field(j, "name")),
+                  (_str(j, "id"), _str(j, "name"),
                    _mor_kind(_field(j, "morType")),
-                   String(_field(_field(j, "dom"), "content")),
-                   String(_field(_field(j, "cod"), "content"))))
+                   _str(_field(j, "dom"), "content"),
+                   _str(_field(j, "cod"), "content")))
         else
             throw(FormatError("unsupported model judgment \"$tag\""))
         end
@@ -258,8 +275,8 @@ function _read_generators(doc)
 end
 
 function _mor_kind(mt)
-    tag = String(_field(mt, "tag"))
-    tag == "Basic" && return String(_field(mt, "content"))
+    tag = _str(mt, "tag")
+    tag == "Basic" && return _str(mt, "content")
     tag == "Hom" && return "Hom"
     return throw(FormatError("unsupported morphism type tag \"$tag\""))
 end
@@ -272,10 +289,8 @@ shape, or their JSON text) back into an ACSets `BasicSchema`, mirroring
 `CatlabExt.model_to_schema` in CatColab: `Entity` objects become objects, `AttrType`
 objects attribute types, `Attr` morphisms attributes and every other morphism a hom.
 Inverse of [`catcolab_schema_document`](@ref) and [`catcolab_model`](@ref); a document
-of another shape, text that is not JSON and a document with a missing key are a
-[`FormatError`](@ref). A JSON value of the wrong type is not converted and raises the
-error of the failed conversion (a number where a string is expected gives a
-`MethodError` from `String`).
+of another shape, text that is not JSON, a document with a missing key and a JSON value
+of the wrong type are a [`FormatError`](@ref) (ADR 0015).
 """
 function parse_catcolab_schema(doc)
     names = Dict{String,Symbol}()
@@ -386,7 +401,7 @@ function catcolab_instance_document(bn::AbstractBayesNet, schema_doc;
 end
 
 function _document_name(doc)
-    return _decoding(() -> String(_field(doc, "name")), KeyError,
+    return _decoding(() -> _str(_as_document(doc), "name"), _SHAPE_ERRORS,
                      "the CatColab schema document")
 end
 
@@ -425,32 +440,31 @@ presentation_json(m::BayesModel) = presentation_json(syntax(m))
 
 Read a network from the JSON written by [`presentation_json`](@ref): one variable per
 object and one mechanism per generator (a generator must have exactly one codomain
-object). A wrong `"format"`, text that is not JSON, a missing key and an unknown
-[`KernelRef`](@ref) type are a [`FormatError`](@ref). A JSON value of the wrong type is
-not converted and raises the error of the failed conversion (a number where a string is
-expected gives a `MethodError` from `String`). The errors of building the network, such
+object). A wrong `"format"`, text that is not JSON, a missing key, a JSON value of the
+wrong type and an unknown [`KernelRef`](@ref) type are a [`FormatError`](@ref)
+(ADR 0015). The errors of building the network, such
 as [`UnknownVariableError`](@ref) for a generator whose object is not declared, pass
 through unchanged.
 """
 function parse_presentation_json(str::AbstractString)
     obj = _read_json(str)
-    _hasfield(obj, "format") && String(_field(obj, "format")) == PRESENTATION_FORMAT ||
+    _hasfield(obj, "format") && _field(obj, "format") == PRESENTATION_FORMAT ||
         throw(FormatError("expected format \"$PRESENTATION_FORMAT\""))
-    return _decoding(KeyError, "the presentation document") do
+    return _decoding(_SHAPE_ERRORS, "the presentation document") do
         bn = BayesNet()
-        for o in _field(obj, "objects")
-            add_variable!(bn, Symbol(_field(o, "name"));
-                          states=Symbol[Symbol(s) for s in _field(o, "states")])
+        for o in _as_array(_field(obj, "objects"), "objects")
+            add_variable!(bn, Symbol(_str(o, "name"));
+                          states=_as_symbols(_field(o, "states"), "states"))
         end
-        for g in _field(obj, "generators")
-            cod = _field(g, "cod")
+        for g in _as_array(_field(obj, "generators"), "generators")
+            gname = _str(g, "name")
+            cod = _as_symbols(_field(g, "cod"), "cod")
             length(cod) == 1 ||
-                throw(FormatError("generator $(_field(g, "name")) must have exactly one codomain object"))
-            add_mechanism!(bn, Symbol(only(cod));
-                           inputs=Symbol[Symbol(x) for x in _field(g, "dom")],
-                           name=Symbol(_field(g, "name")),
+                throw(FormatError("generator $gname must have exactly one codomain object"))
+            add_mechanism!(bn, only(cod); inputs=_as_symbols(_field(g, "dom"), "dom"),
+                           name=Symbol(gname),
                            kernel_ref=_decode_ref(_field(g, "kernel_ref"),
-                                                  "generator $(_field(g, "name"))"))
+                                                  "generator $gname"))
         end
         return bn
     end

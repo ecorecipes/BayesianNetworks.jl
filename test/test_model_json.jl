@@ -201,14 +201,55 @@ end
                                                                 js))
     end
 
+    @testset "values of the wrong JSON type (ADR 0015)" begin
+        bad(f, str) = edited(f, str)
+        for f in (d -> (d["acset"] = 5), d -> (d["acset"]["Variable"] = 5),
+                  d -> (d["acset"]["Variable"] = [5]),
+                  d -> (d["semantics"] = [1]), d -> (d["semantics"]["spaces"] = 3),
+                  d -> (grazing(d)["size"] = [2.5, 2]), d -> (grazing(d)["size"] = "2"),
+                  d -> (grazing(d)["ref"]["type"] = 3), d -> (grazing(d)["dom"] = 1),
+                  d -> (d["evidence"] = 5), d -> (d["evidence"] = Dict("Climate" => 1)),
+                  d -> (d["history"] = "none"), d -> (d["history"][1]["note"] = 1),
+                  d -> (d["history"][1]["time"] = 5.5), d -> (d["history"][1]["time"] = 5),
+                  d -> (d["history"][1]["added"]["inputs"] = "Climate"),
+                  d -> (d["history"][1] = 3))
+            @test_throws FormatError parse_json_model(bad(f, s))
+        end
+        card = ModelCard(m)
+        provenance!(card,
+                    :Occupancy_mechanism => ParameterProvenance(; source_type=:elicited))
+        cs = json_card(card)
+        for f in (d -> (d["card"] = 1), d -> (d["card"]["endpoint"] = 1),
+                  d -> (d["card"]["states"] = 5),
+                  d -> (d["card"]["validation_scores"] = Dict("a" => "x")),
+                  d -> (d["card"]["provenance"]["Occupancy_mechanism"]["source_type"] = "bogus"),
+                  d -> (d["schema_version"] = "9.9"))
+            @test_throws FormatError parse_json_card(bad(f, cs))
+        end
+        js = presentation_json(m)
+        for f in (d -> (d["generators"][1]["cod"] = nothing),
+                  d -> (d["objects"] = 5), d -> (d["objects"][1]["states"] = "a"))
+            @test_throws FormatError parse_presentation_json(bad(f, js))
+        end
+        @test_throws FormatError parse_presentation_json("[1]")
+        @test_throws FormatError parse_catcolab_schema("5")
+        doc = catcolab_model(BayesNet)
+        twolabels = deepcopy(doc)
+        twolabels["obGenerators"][1]["label"] = ["a", "b"]
+        @test_throws FormatError parse_catcolab_schema(twolabels)
+        # The direct StructTypes path keeps its ArgumentError for a non-string field.
+        @test_throws ArgumentError BayesianNetworks._kernel_ref_from(Dict("type" => 3))
+    end
+
     @testset "selective: other errors pass through" begin
         # A typed error from building the network is not rewrapped.
         js = presentation_json(m)
         @test_throws UnknownVariableError parse_presentation_json(edited(d -> (d["generators"][1]["cod"] = ["Nope"]),
                                                                          js))
-        # A JSON value of the wrong type is a known exception, not converted yet: there is
-        # no catch-all, which would also turn a `MethodError` into a `FormatError`.
-        @test_throws MethodError parse_json_model(edited(d -> (grazing(d)["table"][1] = "x"),
+        # A JSON value of the wrong type is checked, not caught (ADR 0015): the reads test
+        # the type, so there is still no catch-all turning a `MethodError` into a
+        # `FormatError`.
+        @test_throws FormatError parse_json_model(edited(d -> (grazing(d)["table"][1] = "x"),
                                                          s))
         # `_kernel_ref_from` itself, and so the direct StructTypes path, keeps its
         # `ArgumentError` (test_refs.jl).

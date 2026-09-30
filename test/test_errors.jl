@@ -48,7 +48,10 @@ end
         for T in owned
             @test T <: BayesNetError
             @test parentmodule(T) === BayesianNetworks
-            @test string(T) == string(nameof(T))
+            # Exported names print bare; an internal type, such as the `_JSONShapeError`
+            # that the JSON decoders convert, is never shown to a caller.
+            Base.isexported(BayesianNetworks, nameof(T)) &&
+                @test string(T) == string(nameof(T))
         end
         @test isabstracttype(BayesNetError)
         @test BayesNetError <: Exception

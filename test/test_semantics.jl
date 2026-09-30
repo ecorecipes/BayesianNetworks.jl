@@ -170,7 +170,12 @@ e_atol(f, args...; kw...) = caught_error(() -> f(args...; kw...)).atol
         # Point-mass mechanisms are materialised and cannot be bound.
         md = do_intervention(m, :Vegetation => :dense)
         @test kernel(md, :Vegetation) == point_mass(space(m, :Vegetation), :dense)
-        @test_throws ArgumentError bind_kernel(md, :Vegetation => kernel(m, :Vegetation))
+        e = try
+            bind_kernel(md, :Vegetation => kernel(m, :Vegetation))
+        catch err
+            err
+        end
+        @test e isa KernelBindingError && e.what === :intervention && e.got isa PointMassRef
         @test has_semantics(md)
         # A point-mass mechanism with inputs is `delete(parents) ⋅ point_mass`.
         bn = bayesnet(:X => [:a, :b], :Y => [:c, :d]; mechanisms=[:Y => :X],

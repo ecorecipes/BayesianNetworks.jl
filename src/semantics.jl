@@ -184,7 +184,8 @@ variable's space as codomain and the tensor of its parents' spaces, in
 The kernel is stored under the mechanism's `kernel_ref`. A mechanism with
 [`NoRef`](@ref) receives the fresh reference `NamedRef(string(mechanism_name))`, so
 the returned model carries an updated syntax; the history is untouched. Mechanisms with
-a [`PointMassRef`](@ref) are materialised on demand and cannot be bound (use
+a [`PointMassRef`](@ref) are materialised on demand and cannot be bound
+([`KernelBindingError`](@ref) with `what = :intervention`; use
 [`soft_intervention`](@ref) to replace them).
 
 # Example
@@ -208,7 +209,9 @@ function bind_kernel(m::BayesModel, b::Pair{Symbol,<:FiniteKernel};
     mech = _mechanism_for(bn, name)
     ref = kernel_ref(bn, mech)
     ref isa PointMassRef &&
-        throw(ArgumentError("the mechanism of :$(variable_name(bn, target(bn, mech))) is a hard intervention ($ref); use soft_intervention to replace it"))
+        throw(KernelBindingError(variable_name(bn, target(bn, mech)), :intervention,
+                                 "a mechanism that is not a hard intervention (use soft_intervention to replace it)",
+                                 ref))
     _check_kernel(bn, mech, k; atol=atol)
     syn = bn
     if ref isa NoRef

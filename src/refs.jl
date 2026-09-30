@@ -72,16 +72,31 @@ StructTypes.lower(r::PointMassRef) = (type="PointMassRef", state=String(r.state)
 StructTypes.lower(r::PolicyRef) = (type="PolicyRef", decision=String(r.decision))
 StructTypes.lower(::NoRef) = (type="NoRef",)
 
-_ref_field(x, key::Symbol) = haskey(x, key) ? x[key] : x[String(key)]
+# A field of a decoded record, by Symbol or String key. A record that is not an object is
+# a `_JSONShapeError` (serialization.jl), which the decoders report as a `FormatError`.
+function _ref_field(x, key::Symbol)
+    x isa Union{AbstractDict,NamedTuple} ||
+        throw(_JSONShapeError(string(key, " (its record)"), "an object", x))
+    return haskey(x, key) ? x[key] : x[String(key)]
+end
+
+# A string field of a reference; another JSON type is the `ArgumentError` of the direct
+# StructTypes path, which the decoders also convert.
+function _ref_string(x, key::Symbol)
+    v = _ref_field(x, key)
+    v isa AbstractString ||
+        throw(ArgumentError("the KernelRef field \"$key\" must be a string, got $(repr(v))"))
+    return String(v)
+end
 
 function _kernel_ref_from(x)
-    ty = String(_ref_field(x, :type))
+    ty = _ref_string(x, :type)
     if ty == "NamedRef"
-        return NamedRef(String(_ref_field(x, :id)))
+        return NamedRef(_ref_string(x, :id))
     elseif ty == "PointMassRef"
-        return PointMassRef(Symbol(_ref_field(x, :state)))
+        return PointMassRef(Symbol(_ref_string(x, :state)))
     elseif ty == "PolicyRef"
-        return PolicyRef(Symbol(_ref_field(x, :decision)))
+        return PolicyRef(Symbol(_ref_string(x, :decision)))
     elseif ty == "NoRef"
         return NoRef()
     else

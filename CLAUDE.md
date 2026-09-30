@@ -157,6 +157,11 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   `"extras"`, and an optional `"card"` section (`json_model(m; card)`, `json_card`,
   `parse_json_card`, `read_json_card`). Documents without a `"card"` are read as before:
   `parse_json_card` returns `nothing` for them, and the model itself parses identically.
+  Decoding (ADR 0013, 0015): every field is read through the typed reads (`_as_string`, `_as_int`,
+  `_as_array`, ..., and `_field`/`_ref_field`, which check the record is an object); they throw the
+  internal `_JSONShapeError`, which `_decoding(..., _SHAPE_ERRORS, what)` turns into `FormatError`.
+  The `"acset"` body goes through `_parse_acset`, the one scoped catch-all (a third-party parser of
+  document data); InfluenceDiagrams' readers use it too. Never add a catch of `MethodError`.
 - `src/graphics.jl`: `to_graphviz` for networks and models (a `Graphviz.Graph` built by hand)
   and `_graphviz_environment!` (called from `__init__`; kept because
   `CategoricalBayesianNetworks.jl` still uses Catlab's renderer for wiring diagrams, which
@@ -332,5 +337,5 @@ JuliaFormatter `yas`; docstrings on every exported name, which `test/test_docstr
 build is strict (no `warnonly`), so a docstring left out of the manual or a broken `@ref` fails it; typed
 exceptions with variable names in the message, following ADR 0013: they live in `src/errors.jl` and subtype
 the nearest root (`FiniteKernelsError`, `BayesianNetworkFormatsError` or `BayesNetError`), invalid arguments
-and keywords raise `ArgumentError`, typed errors from a lower package pass through unchanged and documented,
+and keywords raise `ArgumentError`, typed errors from a lower package pass through unchanged and documented, content read from a file, document or manifest is checked before it is converted and raises the package's typed error (ADR 0015: never catch the `MethodError` or `InexactError` of an unchecked conversion),
 and another package's type is named as a code span, never with `@ref`; no emojis in code or docs.

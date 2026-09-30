@@ -46,4 +46,9 @@ theorem backward : Shadow1 → Shadow2 → Candidate := by
   · rw [h1 bn κ m₀ a x hx, if_pos hx, one_mul]
   · rw [h2 bn κ m₀ a x hx, if_neg hx, zero_mul]
 
+/-- SA-Pass anchor: the cited theorem proves `Candidate` as stated, so a restatement that
+drifts from the proved theorem stops compiling. -/
+theorem anchor : Candidate := fun _ κ m₀ a x =>
+  BayesianNetworksProofs.FinBayesNet.joint_intervene κ m₀ a x
+
 end BayesianNetworksProofs.Shadows.TruncatedFactorisation

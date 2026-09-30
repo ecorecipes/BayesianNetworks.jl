@@ -106,8 +106,8 @@ Reporting:
 
 - Proved, `sorry`-free, on only `propext`, `Classical.choice` and `Quot.sound`: Proposition 1
   (the local product sums to one and the sequential evaluator computes it), Proposition 2
-  (tensor compositionality, `⟦A ⊗ B⟧ = ⟦A⟧ ⊗ ⟦B⟧` for the disjoint union of two networks with
-  no shared feet), Proposition 3 (sequential compositionality) and Proposition 4 (hard
+  (tensor compositionality, `⟦A ⊗ B⟧ = ⟦A⟧ ⊗ ⟦B⟧` for the disjoint union of two networks),
+  Proposition 3 (sequential compositionality) and Proposition 4 (hard
   intervention, truncated factorisation), together with the **open-network closure theorem**:
   `composeNet_target_injective` in `Finite/Open.lean` shows that composition along a matched
   interface preserves "at most one mechanism per variable", with `compose_input_exogenous`,
@@ -137,19 +137,22 @@ Reporting:
 - `Finite/Assignments.lean` and `Finite/Posterior.lean` prove explicit
   clamping/dropping of evidence equivalent to indicator-factor elimination, and VE
   numerator/normalized-posterior correctness. Distributions live on retained
-  assignments, and zero global mass is rejected even for empty or observed queries.
+  assignments, and zero global mass is rejected even for empty or observed queries, and only
+  zero mass: a posterior is returned whenever the evidence has positive mass.
   Julia's empty `infer` query is instead an unnormalized evidence-mass API.
 - `Finite/JunctionTree.lean` defines actual cached Shafer-Shenoy collect/distribute
   passes and proves clique/query agreement with VE and the joint posterior.
   Hypotheses are structural running intersection, complete factor assignment and
   variable coverage, not precomputed correct messages. Binary grafting represents
   arbitrary branching and empty-separator roots represent disconnected forests.
-- `Finite/DSeparation.lean` proves the moralized-ancestral **graph path**
-  criterion implies the conditional-independence event identity. With normalized
-  nonnegative local kernels this has its probability interpretation; conditioning
+- `Finite/DSeparation.lean` proves, for a closed network with a topological order and
+  local normalised kernels, that the moralized-ancestral **graph path** criterion implies
+  the conditional-independence event identity. With nonnegative local kernels this has
+  its probability interpretation; conditioning
   is divided out only at positive mass. `Finite/NumericalContracts.lean` supplies
-  input-perturbation and posterior L1 bounds with an explicit evidence-mass floor,
-  plus a rounded-product bound conditional on local arithmetic contracts.
+  input-perturbation and posterior L1 bounds with an explicit evidence-mass floor (the
+  bound and its smallness condition scale with the number of joint assignments), plus a
+  rounded-product bound conditional on local arithmetic contracts.
 - These are exact finite-model/data results, not verification of Julia execution.
   In particular, the new raw-record compiler feeds the existing `FinBayesNet`
   reduct, whose parent sets erase slot multiplicity only after diagonal evaluation.

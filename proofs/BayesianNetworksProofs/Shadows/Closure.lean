@@ -51,4 +51,9 @@ theorem backward : Shadow1 → Shadow2 → Shadow3 → Candidate := by
   · exact absurd hm.symm (h3 A B c m' m)
   · exact congrArg Sum.inr (h2 A B c m m' hm)
 
+/-- SA-Pass anchor: the cited theorem proves `Candidate` as stated, so a restatement that
+drifts from the proved theorem stops compiling. -/
+theorem anchor : Candidate := fun _ _ c =>
+  BayesianNetworksProofs.OpenFinBayesNet.Composable.composeNet_target_injective (c := c)
+
 end BayesianNetworksProofs.Shadows.Closure

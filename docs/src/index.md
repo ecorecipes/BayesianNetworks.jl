@@ -111,13 +111,15 @@ identities on partial assignments, rejecting zero global mass.
 `Finite/JunctionTree.lean` proves actual cached collect/distribute passes correct
 under structural running intersection and complete factor/variable coverage,
 including arbitrary branching and disconnected forests. `Finite/DSeparation.lean`
-derives conditional independence from paths in the moralized ancestral graph.
+derives conditional independence from paths in the moralized ancestral graph, for a
+closed network with a topological order and local normalised kernels.
 These are exact finite-model results, not a Julia/CliqueTrees/array proof:
 formal forest beliefs are global, whereas Julia stores component beliefs and
 checks their global mass separately. Julia's empty `infer` query returns
 unnormalized mass, not the formal normalized empty-query distribution.
 Numerical perturbation bounds require an explicit positive evidence-mass floor
-and a sufficiently small error budget; they do not certify all IEEE operations.
+and a sufficiently small error budget, and both the bound and that budget scale with
+the number of joint assignments; they do not certify all IEEE operations.
 
 All default and compatibility Roadmap targets are
 `sorry`-free, with only `propext`, `Classical.choice` and `Quot.sound` in the axiom audit.

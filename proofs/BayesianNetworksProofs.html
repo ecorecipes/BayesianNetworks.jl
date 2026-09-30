@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Simon Frost" />
-  <meta name="dcterms.date" content="2026-09-08" />
+  <meta name="dcterms.date" content="2026-09-30" />
   <title>Formal Verification of BayesianNetworks.jl</title>
   <style>
     /* Default styles provided by pandoc.
@@ -96,7 +96,7 @@
 <header id="title-block-header">
 <h1 class="title">Formal Verification of BayesianNetworks.jl</h1>
 <p class="author">Simon Frost</p>
-<p class="date">2026-09-08</p>
+<p class="date">2026-09-30</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -5296,9 +5296,15 @@ finite-model theorems.</p>
 <p>The general structural open-network category, including non-injective
 output legs, pass-through and coherent copy/discard, is now constructed
 separately in <code>CategoricalBayesianNetworks.jl/proofs/</code> (ADR
-0010). A numerical semantics functor out of that category and a general
-pass-through numerical composition formula remain separate work. The
-category of stochastic kernels is a different result, provided by
+0010), together with its numerical semantics: a strong braided monoidal
+functor into FinStoch preserving copy and discard
+(<code>OpenNet.Interpretation.functor</code>), whose composition formula
+<code>Interpretation.kernel_comp</code> covers copied and pass-through
+outputs. What remains here is a pass-through <code>osem</code>
+composition formula for this project’s own <code>OpenFinBayesNet</code>
+representation, whose <code>osem_compose_glue</code> still requires
+disjoint input/output sets. The category of stochastic kernels is a
+different result, provided by
 <code>FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean</code>.</p>
 </body>
 </html>

@@ -35,4 +35,9 @@ theorem forward2 : Candidate → Shadow2 := id
 
 theorem backward : Shadow1 → Shadow2 → Candidate := fun _ h2 => h2
 
+/-- SA-Pass anchor: the cited theorem proves `Candidate` as stated, so a restatement that
+drifts from the proved theorem stops compiling. -/
+theorem anchor : Candidate := fun _ κ hc ord hloc hnorm =>
+  BayesianNetworksProofs.FinBayesNet.sum_joint_eq_one κ hc ord hloc hnorm
+
 end BayesianNetworksProofs.Shadows.JointFactorises

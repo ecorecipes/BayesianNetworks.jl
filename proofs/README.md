@@ -120,7 +120,8 @@ rejects unexpected output or warnings. It does not merely print an audit to the 
   positive conditioning mass is explicit when dividing. This is the moralized-ancestral
   criterion, not a proof of a concrete Bayes-ball implementation.
 * `NumericalContracts.lean` proves finite product/input perturbation bounds, a mass-dependent
-  posterior L1 error bound, and a recursively rounded-product bound from local multiplication
+  posterior L1 error bound (which, with its smallness condition, scales with the number of
+  joint assignments), and a recursively rounded-product bound from local multiplication
   contracts. It does not assert universal Float64 oracle identity. Evidence mass must have
   a positive floor; machine multiplication contracts and further rounding layers need their
   own validated adapters.
@@ -161,8 +162,10 @@ Only factors whose scopes contain the variable are multiplied into its bucket. R
 factors are retained with their multiplicities and overlapping scopes are permitted.
 `eliminateAll_joint` connects mechanism compilation to the existing `joint` and `marg`
 definitions. It proves an **unnormalised** marginal over any commutative semiring; posterior
-division at zero evidence mass is not justified, and ordered array layout, junction trees,
-and message passing are not verified.
+division at zero evidence mass is not justified here, and ordered array layout is not
+verified. Normalised posteriors with zero-mass rejection (`Finite/Posterior.lean`) and the
+junction tree's collect/distribute message passing (`Finite/JunctionTree.lean`) are proved
+separately, below.
 
 Throughout the project, sum-to-one over a general semiring is a normalisation identity.
 Nonnegative entries must additionally be supplied for a probability interpretation over
@@ -237,16 +240,19 @@ summing its retained interface gives two.
 The general open-network category is now constructed in the separate
 `CategoricalBayesianNetworks.jl/proofs/` project. It has explicit boundary maps,
 ordered repeated parent slots, structural-isomorphism equality, pushout universality,
-and Mathlib category/monoidal/symmetric/copy-discard instances. A general FinStoch
-interpretation functor and the full Julia/ACSet representation bridge remain unproved.
+and Mathlib category/monoidal/symmetric/copy-discard instances. Its general FinStoch
+interpretation is proved there too, as a strong braided monoidal functor preserving copy and
+discard (`OpenNet.Interpretation.functor`, with the composition formula
+`Interpretation.kernel_comp` valid for copied and pass-through outputs). The full
+Julia/ACSet representation bridge remains unproved.
 `outputs_card_le_inputs_card_of_no_mechanisms` isolates the representation obstruction to
 a mechanism-free copying foot with one input and two output ports in this project's
 older subset-foot representation, not in the new boundary-map representation.
 
 The shared Lean project remains in `BayesianNetworks.jl`: it supplies the
 finite semantics, the schema emitter and the downstream influence-diagram dependency.
-The new syntax-only categorical project currently needs Mathlib but does not import this
-finite numerical core; a later numerical semantics bridge can introduce that dependency.
+The categorical project requires this one (its `lakefile.toml` depends on
+`../../BayesianNetworks.jl/proofs`) for the finite numerical core its interpretation uses.
 Schema emission stays here. Mathlib imports are not Julia dependencies and do not
 violate the Catlab layering rule.
 

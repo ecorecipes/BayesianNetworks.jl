@@ -19,8 +19,11 @@ adapters are not established merely by those finite-model theorems.
 
 The general structural open-network category, including non-injective output legs,
 pass-through and coherent copy/discard, is now constructed separately in
-`CategoricalBayesianNetworks.jl/proofs/` (ADR 0010). A numerical semantics functor out of
-that category and a general pass-through numerical composition formula remain separate
-work. The category of stochastic kernels is a different result, provided by
+`CategoricalBayesianNetworks.jl/proofs/` (ADR 0010), together with its numerical semantics:
+a strong braided monoidal functor into FinStoch preserving copy and discard
+(`OpenNet.Interpretation.functor`), whose composition formula `Interpretation.kernel_comp`
+covers copied and pass-through outputs. What remains here is a pass-through `osem`
+composition formula for this project's own `OpenFinBayesNet` representation, whose
+`osem_compose_glue` still requires disjoint input/output sets. The category of stochastic kernels is a different result, provided by
 `FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean`.
 -/

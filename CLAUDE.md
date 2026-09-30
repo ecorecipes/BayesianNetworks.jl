@@ -117,6 +117,10 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   replaces stored evidence; impossible observations are still data. The consumer's
   exact normalization result is separate from runtime `atol`. This is not the
   open-network or DVE certificate format.
+- `src/exact_rounding.jl` (ADR 0016): `_dyadic` (a Float64 as an exact integer times a power of two),
+  `_rational_exponent` and `_nearest_binary64` (correct rounding of a `Rational{BigInt}` by integer
+  arithmetic, ties to even). The one definition: `marginal`/`conditional`'s exact fallback here,
+  BayesianNetworkInference's `_Dyadic` arithmetic and InfluenceDiagrams' exact DVE all use it.
 - `src/evaluation.jl`: brute-force `joint_distribution` (a `FiniteKernel` state) and
   `JointTable`, `marginal` / `conditional` with evidence, `sample` / `empirical_marginal`.
   All enumerate joint states and are capped by `max_states`. The shared internals

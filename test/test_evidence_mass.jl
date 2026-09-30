@@ -1,5 +1,6 @@
 # Evidence mass (ADR 0014): ImpossibleEvidenceError means probability exactly zero. Evidence
-# whose binary64 mass underflows is recomputed in the log domain and answered; tolerated
+# whose binary64 mass underflows is recomputed exactly and answered, correctly rounded
+# (ADR 0016); tolerated
 # negative entries that leave the posterior's sign to rounding raise
 # IndeterminatePosteriorError.
 @testset "evidence mass (ADR 0014)" begin
@@ -26,6 +27,45 @@
         @test names(pj.codom) == [:C, :A]
         @test isapprox(pj.table[:, 2], [0.6, 0.4]; rtol=1e-12)
         @test all(iszero, pj.table[:, 1])
+    end
+
+    @testset "the fallback is correctly rounded (ADR 0016)" begin
+        exact(x) = Rational{BigInt}(x)
+        nearest = BayesianNetworks._nearest_binary64
+        # Float64(0.6) + Float64(0.4) is exactly one, so the exact posterior is representable
+        # and the fallback returns it bit for bit.
+        m = bind_cpt(BayesModel(bn),
+                     [:A => [1 - 1e-200, 1e-200],
+                      :B => [1 - 1e-200, 1e-200], :C => kernels_C])
+        ev = Dict(:A => :b, :B => :y)
+        @test marginal(m, :C; evidence=ev).table == [0.6, 0.4]
+        # Float64(0.1) + Float64(0.9) is 1 + 2^-55, so the posterior is not a row of the
+        # table: each cell is the Float64 nearest the exact quotient.
+        m19 = bind_cpt(m, :C => [0.3 0.7; 0.1 0.9])
+        want = [nearest(exact(0.1) / (exact(0.1) + exact(0.9))),
+                nearest(exact(0.9) / (exact(0.1) + exact(0.9)))]
+        @test marginal(m19, :C; evidence=ev).table == want
+        # A posterior that depends on the rare numbers themselves.
+        xy = bayesnet(:X => [:x0, :x1], :Y => [:n, :y], :Z => [:n, :z];
+                      mechanisms=[:X => (), :Y => (:X,), :Z => ()])
+        mx = bind_cpt(BayesModel(xy),
+                      [:X => [0.3, 0.7], :Y => [1-1e-200 1e-200; 1-3e-200 3e-200],
+                       :Z => [1 - 1e-200, 1e-200]])
+        w = [exact(0.3) * exact(1e-200), exact(0.7) * exact(3e-200)]
+        @test marginal(mx, :X; evidence=Dict(:Y => :y, :Z => :z)).table ==
+              [nearest(w[1] / sum(w)), nearest(w[2] / sum(w))]
+        # `conditional` recomputes the underflowed column exactly too.
+        k = conditional(m, :C, :A; evidence=Dict(:B => :y))
+        @test cpt(k)[2, :] == [0.6, 0.4]
+        # The rounding: ties to even at the midpoint between 1 and its successor.
+        midpoint = (exact(1.0) + exact(nextfloat(1.0))) / 2
+        @test nearest(midpoint) == 1.0
+        @test nearest(midpoint + big(1) // big(2)^500) == nextfloat(1.0)
+        for x in (-0.5, 0.1, 1e-310, floatmax(Float64), 0.0)
+            n, e = BayesianNetworks._dyadic(x)
+            scale = e >= 0 ? big(2)^e // big(1) : big(1) // big(2)^-e
+            @test n * scale == Rational{BigInt}(x)
+        end
     end
 
     @testset "exact zero is still impossible" begin

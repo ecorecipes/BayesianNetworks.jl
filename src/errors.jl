@@ -560,8 +560,9 @@ which only a raw factor graph can have; the message then says so.
 
 Zero means exactly zero (ADR 0014). A path that forms the evidence mass as a binary64
 number never reports a mass below the normal range as zero: a positive probability can
-underflow there, so the path recomputes the answer in the log domain or in exact
-arithmetic, and raises this error only when that computation proves the mass is zero. A
+underflow there, so the path recomputes the answer in exact arithmetic, and raises this
+error only when that computation proves the mass is zero; the posterior it returns
+instead is correctly rounded (ADR 0016). A
 mass that tolerated negative entries (ADR 0007) leave undetermined is
 [`IndeterminatePosteriorError`](@ref), not this error.
 

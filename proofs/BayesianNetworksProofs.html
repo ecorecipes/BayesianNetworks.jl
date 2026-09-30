@@ -264,11 +264,13 @@ independence.</p></li>
 <li><p><code>Finite/Open.lean</code>: the typed-interface rule,
 open-network closure and split composition.</p></li>
 <li><p><code>Finite/OpenSemantics.lean</code>: own-variable open
-semantics under partial gluing; the original <code>osem_compose</code>
-and a stronger theorem without locality, normalisation or total
-matching.</p></li>
-<li><p><code>Finite/BoundaryCases.lean</code>: pass-through
-counterexample and mechanism-free copying limitation of subset
+semantics under partial gluing; the original <code>osem_compose</code>,
+a stronger theorem without locality, normalisation or total matching,
+and <code>osem_compose_passthrough</code> for arbitrary pass-through,
+with no hypotheses.</p></li>
+<li><p><code>Finite/BoundaryCases.lean</code>: the pass-through
+counterexample to the glue formula, the pass-through formula checked on
+the same wire, and the mechanism-free copying limitation of subset
 feet.</p></li>
 <li><p><code>Markov/Basic.lean</code>: consequences of Mathlib’s
 abstract Markov/copy-discard classes.</p></li>
@@ -346,9 +348,9 @@ evaluator computes it)</td>
 <td style="text-align: left;">Prop 3 — sequential compositionality,
 <code>⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧</code></td>
 <td style="text-align: left;"><code>marg_joint_compose_split</code>,
-<code>osem_compose</code>, <code>osem_compose_glue</code>; the
-own-variable formulas require disjoint inputs/outputs on both
-networks</td>
+<code>osem_compose</code>, <code>osem_compose_glue</code> (disjoint
+inputs/outputs), <code>osem_compose_passthrough</code> (arbitrary
+pass-through)</td>
 <td style="text-align: left;"><code>compose(A, B)</code>,
 <code>glue(A, B; along)</code> in the categorical package</td>
 </tr>
@@ -1742,9 +1744,10 @@ over the interface of the product of the two open semantics. Taking
 glued interface and <code>T</code> to be <code>B</code>’s hidden
 variables gives <code>⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧</code> when neither network
 has pass-through variables. The transfer to the open semantics of
-<code>A</code> and <code>B</code> on their own variable types is now
-proved in <code>Finite/OpenSemantics.lean</code>; partial matching is
-permitted.</li>
+<code>A</code> and <code>B</code> on their own variable types is proved
+in <code>Finite/OpenSemantics.lean</code>, with partial matching and, in
+<code>osem_compose_passthrough</code>, arbitrary pass-through on either
+side.</li>
 </ul>
 <div class="sourceCode" id="cb27"><pre
 class="sourceCode lean"><code class="sourceCode lean"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> BayesianNetworksProofs</span>
@@ -2185,10 +2188,14 @@ theorem permits a partial interface match (<code>glue</code>), not only
 a total match (<code>compose</code>), and needs neither kernel locality
 nor normalisation: the equality is an algebraic identity of finite sums
 and products.</p>
-<p>Both networks must have disjoint input and output sets for the
-formula here, which sums over every glued variable. Pass-through
-variables require a different formula retaining visible interface
-values; they must not be silently integrated out.</p>
+<p><code>osem_compose_passthrough</code> is the formula for arbitrary
+interfaces. A glued variable that stays on the composite’s interface –
+an input of <code>A</code>, or passed by <code>B</code> straight to its
+outputs – keeps its visible value and is never summed; only the
+<code>innerGlued</code> variables are. It needs no hypotheses at all.
+With disjoint input and output sets on both networks every glued
+variable is inner (<code>innerGlued_eq_glued</code>), which gives
+<code>osem_compose_glue</code>.</p>
 <div class="sourceCode" id="cb30"><pre
 class="sourceCode lean"><code class="sourceCode lean"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> autoImplicit false</span>
 <span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a></span>
@@ -2281,113 +2288,218 @@ class="sourceCode lean"><code class="sourceCode lean"><span id="cb30-1"><a href=
 <span id="cb30-89"><a href="#cb30-89" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [restrictB_of_notMem c y hv, restrictB_of_notMem c x hv]</span>
 <span id="cb30-90"><a href="#cb30-90" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> mem_fibre<span class="fl">.1</span> hy _ (<span class="kw">by</span> <span class="cf">simp</span>)</span>
 <span id="cb30-91"><a href="#cb30-91" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb30-92"><a href="#cb30-92" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The hidden variables of a composite, with unglued outputs retained. Total matching is</span></span>
-<span id="cb30-93"><a href="#cb30-93" aria-hidden="true" tabindex="-1"></a><span class="do">not required. -/</span></span>
-<span id="cb30-94"><a href="#cb30-94" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> hidden_compose (hA : A.inputs ∩ A.outputs = ∅)</span>
-<span id="cb30-95"><a href="#cb30-95" aria-hidden="true" tabindex="-1"></a>    (hB : B.inputs ∩ B.outputs = ∅) :</span>
-<span id="cb30-96"><a href="#cb30-96" aria-hidden="true" tabindex="-1"></a>    (compose c).hidden =</span>
-<span id="cb30-97"><a href="#cb30-97" aria-hidden="true" tabindex="-1"></a>      (c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪</span>
-<span id="cb30-98"><a href="#cb30-98" aria-hidden="true" tabindex="-1"></a>        B.hidden.map c.trEmb := <span class="kw">by</span></span>
-<span id="cb30-99"><a href="#cb30-99" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hAi : ∀ v ∈ A.outputs, v ∉ A.inputs := <span class="kw">by</span></span>
-<span id="cb30-100"><a href="#cb30-100" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v ho hi</span>
-<span id="cb30-101"><a href="#cb30-101" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := Finset.mem_inter<span class="fl">.2</span> ⟨hi, ho⟩</span>
-<span id="cb30-102"><a href="#cb30-102" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hA] <span class="kw">at</span> this</span>
-<span id="cb30-103"><a href="#cb30-103" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Finset.notMem_empty _ this</span>
-<span id="cb30-104"><a href="#cb30-104" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hBi : ∀ v ∈ B.outputs, v ∉ B.inputs := <span class="kw">by</span></span>
-<span id="cb30-105"><a href="#cb30-105" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v ho hi</span>
-<span id="cb30-106"><a href="#cb30-106" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := Finset.mem_inter<span class="fl">.2</span> ⟨hi, ho⟩</span>
-<span id="cb30-107"><a href="#cb30-107" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hB] <span class="kw">at</span> this</span>
-<span id="cb30-108"><a href="#cb30-108" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Finset.notMem_empty _ this</span>
-<span id="cb30-109"><a href="#cb30-109" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hn : ∀ a (S : Finset B.V), Disjoint S B.inputs →</span>
-<span id="cb30-110"><a href="#cb30-110" aria-hidden="true" tabindex="-1"></a>      Sum.inl a ∉ S.map c.trEmb := <span class="kw">by</span></span>
-<span id="cb30-111"><a href="#cb30-111" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> a S hs hm</span>
-<span id="cb30-112"><a href="#cb30-112" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨v, hv, he⟩ := Finset.mem_map<span class="fl">.1</span> hm</span>
-<span id="cb30-113"><a href="#cb30-113" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hvi : v ∉ B.inputs := <span class="kw">fun</span> hi =&gt; Finset.disjoint_left<span class="fl">.1</span> hs hv hi</span>
-<span id="cb30-114"><a href="#cb30-114" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [trEmb_apply, tr_of_notMem hvi] <span class="kw">at</span> he</span>
-<span id="cb30-115"><a href="#cb30-115" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Sum.inr_ne_inl he</span>
-<span id="cb30-116"><a href="#cb30-116" aria-hidden="true" tabindex="-1"></a>  <span class="cf">ext</span> v</span>
-<span id="cb30-117"><a href="#cb30-117" aria-hidden="true" tabindex="-1"></a>  <span class="cf">cases</span> v <span class="kw">with</span></span>
-<span id="cb30-118"><a href="#cb30-118" aria-hidden="true" tabindex="-1"></a>  | inl a =&gt;</span>
-<span id="cb30-119"><a href="#cb30-119" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hbo : Sum.inl a ∉ B.outputs.map c.trEmb :=</span>
-<span id="cb30-120"><a href="#cb30-120" aria-hidden="true" tabindex="-1"></a>      hn a B.outputs (Finset.disjoint_left<span class="fl">.2</span> hBi)</span>
-<span id="cb30-121"><a href="#cb30-121" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hbh : Sum.inl a ∉ B.hidden.map c.trEmb :=</span>
-<span id="cb30-122"><a href="#cb30-122" aria-hidden="true" tabindex="-1"></a>      hn a B.hidden (hidden_disjoint_inputs B)</span>
-<span id="cb30-123"><a href="#cb30-123" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [hidden, compose, Finset.mem_compl, Finset.mem_union,</span>
-<span id="cb30-124"><a href="#cb30-124" aria-hidden="true" tabindex="-1"></a>      Finset.mem_map, Function.Embedding.inl_apply, Sum.inl.injEq, exists_eq_right,</span>
-<span id="cb30-125"><a href="#cb30-125" aria-hidden="true" tabindex="-1"></a>      Finset.mem_sdiff] <span class="kw">at</span> *</span>
-<span id="cb30-126"><a href="#cb30-126" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hg : a ∈ c.glued</span>
-<span id="cb30-127"><a href="#cb30-127" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> ho := glued_subset_outputs c hg</span>
-<span id="cb30-128"><a href="#cb30-128" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp_all</span></span>
-<span id="cb30-129"><a href="#cb30-129" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp_all</span></span>
-<span id="cb30-130"><a href="#cb30-130" aria-hidden="true" tabindex="-1"></a>  | inr b =&gt;</span>
-<span id="cb30-131"><a href="#cb30-131" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hidden, Finset.mem_compl]</span>
-<span id="cb30-132"><a href="#cb30-132" aria-hidden="true" tabindex="-1"></a>    change (Sum.inr b ∉ A.inputs.map Function.Embedding.inl ∪</span>
-<span id="cb30-133"><a href="#cb30-133" aria-hidden="true" tabindex="-1"></a>      ((A.outputs \ c.glued).map Function.Embedding.inl ∪ B.outputs.map c.trEmb)) ↔</span>
-<span id="cb30-134"><a href="#cb30-134" aria-hidden="true" tabindex="-1"></a>        Sum.inr b ∈ (c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪</span>
-<span id="cb30-135"><a href="#cb30-135" aria-hidden="true" tabindex="-1"></a>          B.hidden.map c.trEmb</span>
-<span id="cb30-136"><a href="#cb30-136" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [Finset.mem_union, inr_mem_map_trEmb (c := c)]</span>
-<span id="cb30-137"><a href="#cb30-137" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> [hidden, b.property]</span>
-<span id="cb30-138"><a href="#cb30-138" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb30-139"><a href="#cb30-139" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Proposition 3, including partial gluing.** Sum the product of the two own-variable</span></span>
-<span id="cb30-140"><a href="#cb30-140" aria-hidden="true" tabindex="-1"></a><span class="do">open semantics over the glued interface. No stochastic or locality assumptions are needed. -/</span></span>
-<span id="cb30-141"><a href="#cb30-141" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> osem_compose_glue (κA : A.Kernel R) (κB : B.Kernel R)</span>
-<span id="cb30-142"><a href="#cb30-142" aria-hidden="true" tabindex="-1"></a>    (hA : A.inputs ∩ A.outputs = ∅) (hB : B.inputs ∩ B.outputs = ∅)</span>
-<span id="cb30-143"><a href="#cb30-143" aria-hidden="true" tabindex="-1"></a>    (x : (compose c).Assignment) :</span>
-<span id="cb30-144"><a href="#cb30-144" aria-hidden="true" tabindex="-1"></a>    osem (compose c) (composeKernel c κA κB) x =</span>
-<span id="cb30-145"><a href="#cb30-145" aria-hidden="true" tabindex="-1"></a>      marg (c.glued.map Function.Embedding.inl)</span>
-<span id="cb30-146"><a href="#cb30-146" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> y =&gt; osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := <span class="kw">by</span></span>
-<span id="cb30-147"><a href="#cb30-147" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hg : Disjoint (c.glued.map Function.Embedding.inl : Finset (composeNet c).V)</span>
-<span id="cb30-148"><a href="#cb30-148" aria-hidden="true" tabindex="-1"></a>      (A.hidden.map Function.Embedding.inl) := <span class="kw">by</span></span>
-<span id="cb30-149"><a href="#cb30-149" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [Finset.disjoint_left]</span>
-<span id="cb30-150"><a href="#cb30-150" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv hh</span>
-<span id="cb30-151"><a href="#cb30-151" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨a, ha, rfl⟩ := Finset.mem_map<span class="fl">.1</span> hv</span>
-<span id="cb30-152"><a href="#cb30-152" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hah : a ∈ A.hidden := <span class="kw">by</span> <span class="cf">simpa</span> <span class="kw">using</span> hh</span>
-<span id="cb30-153"><a href="#cb30-153" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Finset.mem_compl<span class="fl">.1</span> hah (Finset.mem_union_right _ (glued_subset_outputs c ha))</span>
-<span id="cb30-154"><a href="#cb30-154" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hS : c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl</span>
-<span id="cb30-155"><a href="#cb30-155" aria-hidden="true" tabindex="-1"></a>      ⊆ varsA c := <span class="kw">by</span></span>
-<span id="cb30-156"><a href="#cb30-156" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv</span>
-<span id="cb30-157"><a href="#cb30-157" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> Finset.mem_union<span class="fl">.1</span> hv <span class="kw">with</span> hv | hv &lt;;&gt;</span>
-<span id="cb30-158"><a href="#cb30-158" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨a, _, rfl⟩ := Finset.mem_map<span class="fl">.1</span> hv &lt;;&gt; <span class="cf">exact</span> inl_mem_varsA a</span>
-<span id="cb30-159"><a href="#cb30-159" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hT : B.hidden.map c.trEmb ⊆ varsB c := <span class="kw">by</span></span>
-<span id="cb30-160"><a href="#cb30-160" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv</span>
-<span id="cb30-161"><a href="#cb30-161" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨b, hb, rfl⟩ := Finset.mem_map<span class="fl">.1</span> hv</span>
-<span id="cb30-162"><a href="#cb30-162" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hbi : b ∉ B.inputs := <span class="kw">fun</span> hi =&gt;</span>
-<span id="cb30-163"><a href="#cb30-163" aria-hidden="true" tabindex="-1"></a>      Finset.disjoint_left<span class="fl">.1</span> (hidden_disjoint_inputs B) hb hi</span>
-<span id="cb30-164"><a href="#cb30-164" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [trEmb_apply, tr_of_notMem hbi]</span>
-<span id="cb30-165"><a href="#cb30-165" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> inr_mem_varsB _</span>
-<span id="cb30-166"><a href="#cb30-166" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> osem</span>
-<span id="cb30-167"><a href="#cb30-167" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hidden_compose c hA hB, marg_joint_compose_split κA κB hS hT,</span>
-<span id="cb30-168"><a href="#cb30-168" aria-hidden="true" tabindex="-1"></a>    marg_union_disjoint hg]</span>
-<span id="cb30-169"><a href="#cb30-169" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> heq : ∀ z, marg (B.hidden.map c.trEmb)</span>
-<span id="cb30-170"><a href="#cb30-170" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">fun</span> w =&gt; joint κB (restrictB c w)) z = marg B.hidden (joint κB) (restrictB c z) :=</span>
-<span id="cb30-171"><a href="#cb30-171" aria-hidden="true" tabindex="-1"></a>    marg_restrictB c B.hidden (hidden_disjoint_inputs B) (joint κB)</span>
-<span id="cb30-172"><a href="#cb30-172" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp_rw</span> [heq]</span>
-<span id="cb30-173"><a href="#cb30-173" aria-hidden="true" tabindex="-1"></a>  <span class="cf">apply</span> congrArg (<span class="kw">fun</span> F =&gt; marg (c.glued.map Function.Embedding.inl) F x)</span>
-<span id="cb30-174"><a href="#cb30-174" aria-hidden="true" tabindex="-1"></a>  <span class="cf">funext</span> y</span>
-<span id="cb30-175"><a href="#cb30-175" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span></span>
-<span id="cb30-176"><a href="#cb30-176" aria-hidden="true" tabindex="-1"></a>    _ = marg (A.hidden.map Function.Embedding.inl)</span>
-<span id="cb30-177"><a href="#cb30-177" aria-hidden="true" tabindex="-1"></a>          (<span class="kw">fun</span> z =&gt; joint κA (restrictA c z)) y *</span>
-<span id="cb30-178"><a href="#cb30-178" aria-hidden="true" tabindex="-1"></a>            marg B.hidden (joint κB) (restrictB c y) := <span class="kw">by</span></span>
-<span id="cb30-179"><a href="#cb30-179" aria-hidden="true" tabindex="-1"></a>      <span class="cf">unfold</span> marg</span>
-<span id="cb30-180"><a href="#cb30-180" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [Finset.sum_mul]</span>
-<span id="cb30-181"><a href="#cb30-181" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> Finset.sum_congr <span class="cf">rfl</span> <span class="kw">fun</span> z hz =&gt; ?_</span>
-<span id="cb30-182"><a href="#cb30-182" aria-hidden="true" tabindex="-1"></a>      <span class="cf">dsimp</span> only</span>
-<span id="cb30-183"><a href="#cb30-183" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [restrictB_eq_of_mem_fibre_hidden c y z hz]</span>
-<span id="cb30-184"><a href="#cb30-184" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span> <span class="cf">rw</span> [marg_restrictA]</span>
-<span id="cb30-185"><a href="#cb30-185" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb30-186"><a href="#cb30-186" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The original Roadmap statement, with its original (now known to be stronger than</span></span>
-<span id="cb30-187"><a href="#cb30-187" aria-hidden="true" tabindex="-1"></a><span class="do">necessary) premises retained. `osem_compose_glue` proves it without locality, normalisation,</span></span>
-<span id="cb30-188"><a href="#cb30-188" aria-hidden="true" tabindex="-1"></a><span class="do">or surjectivity of the interface map. -/</span></span>
-<span id="cb30-189"><a href="#cb30-189" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> osem_compose (κA : A.Kernel R) (κB : B.Kernel R)</span>
-<span id="cb30-190"><a href="#cb30-190" aria-hidden="true" tabindex="-1"></a>    (_hlocA : ∀ m, Local κA m) (_hlocB : ∀ m, Local κB m) (_hnormB : ∀ m, Normalised κB m)</span>
-<span id="cb30-191"><a href="#cb30-191" aria-hidden="true" tabindex="-1"></a>    (hA : A.inputs ∩ A.outputs = ∅) (hB : B.inputs ∩ B.outputs = ∅)</span>
-<span id="cb30-192"><a href="#cb30-192" aria-hidden="true" tabindex="-1"></a>    (_hι : Function.Surjective c.ι) (x : (compose c).Assignment) :</span>
-<span id="cb30-193"><a href="#cb30-193" aria-hidden="true" tabindex="-1"></a>    osem (compose c) (composeKernel c κA κB) x =</span>
-<span id="cb30-194"><a href="#cb30-194" aria-hidden="true" tabindex="-1"></a>      marg (c.glued.map Function.Embedding.inl)</span>
-<span id="cb30-195"><a href="#cb30-195" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> y =&gt; osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := <span class="kw">by</span></span>
-<span id="cb30-196"><a href="#cb30-196" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> osem_compose_glue c κA κB hA hB x</span>
-<span id="cb30-197"><a href="#cb30-197" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb30-198"><a href="#cb30-198" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.OpenFinBayesNet.Composable</span></code></pre></div>
+<span id="cb30-92"><a href="#cb30-92" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The glued variables that the composite hides. A glued variable stays on the composite&#39;s</span></span>
+<span id="cb30-93"><a href="#cb30-93" aria-hidden="true" tabindex="-1"></a><span class="do">interface, and must not be summed, when it is an input of `A` (a pass-through on `A`&#39;s side,</span></span>
+<span id="cb30-94"><a href="#cb30-94" aria-hidden="true" tabindex="-1"></a><span class="do">which remains a composite input) or when `B` passes it straight to its outputs (a</span></span>
+<span id="cb30-95"><a href="#cb30-95" aria-hidden="true" tabindex="-1"></a><span class="do">pass-through on `B`&#39;s side, which becomes a composite output). Only the rest is internal. -/</span></span>
+<span id="cb30-96"><a href="#cb30-96" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> innerGlued : Finset A.V :=</span>
+<span id="cb30-97"><a href="#cb30-97" aria-hidden="true" tabindex="-1"></a>  c.glued.filter <span class="kw">fun</span> a =&gt; a ∉ A.inputs ∧ Sum.inl a ∉ B.outputs.map c.trEmb</span>
+<span id="cb30-98"><a href="#cb30-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-99"><a href="#cb30-99" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> innerGlued_subset_glued : c.innerGlued ⊆ c.glued := Finset.filter_subset _ _</span>
+<span id="cb30-100"><a href="#cb30-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-101"><a href="#cb30-101" aria-hidden="true" tabindex="-1"></a><span class="do">/-- An `A` variable that `B`&#39;s outputs reach through the right leg is glued. -/</span></span>
+<span id="cb30-102"><a href="#cb30-102" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> mem_glued_of_inl_mem_map (a : A.V) (h : Sum.inl a ∈ B.outputs.map c.trEmb) :</span>
+<span id="cb30-103"><a href="#cb30-103" aria-hidden="true" tabindex="-1"></a>    a ∈ c.glued := <span class="kw">by</span></span>
+<span id="cb30-104"><a href="#cb30-104" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨w, _, he⟩ := Finset.mem_map<span class="fl">.1</span> h</span>
+<span id="cb30-105"><a href="#cb30-105" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hw : w ∈ B.inputs</span>
+<span id="cb30-106"><a href="#cb30-106" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [trEmb_apply, tr_of_mem hw, Sum.inl.injEq] <span class="kw">at</span> he</span>
+<span id="cb30-107"><a href="#cb30-107" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Finset.mem_image<span class="fl">.2</span> ⟨⟨w, hw⟩, Finset.mem_univ _, he⟩</span>
+<span id="cb30-108"><a href="#cb30-108" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [trEmb_apply, tr_of_notMem hw] <span class="kw">at</span> he</span>
+<span id="cb30-109"><a href="#cb30-109" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> absurd he (<span class="kw">by</span> <span class="cf">simp</span>)</span>
+<span id="cb30-110"><a href="#cb30-110" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-111"><a href="#cb30-111" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> inl_notMem_map_of_disjoint (a : A.V) (S : Finset B.V) (hs : Disjoint S B.inputs) :</span>
+<span id="cb30-112"><a href="#cb30-112" aria-hidden="true" tabindex="-1"></a>    Sum.inl a ∉ S.map c.trEmb := <span class="kw">by</span></span>
+<span id="cb30-113"><a href="#cb30-113" aria-hidden="true" tabindex="-1"></a>  <span class="cf">intro</span> hm</span>
+<span id="cb30-114"><a href="#cb30-114" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨v, hv, he⟩ := Finset.mem_map<span class="fl">.1</span> hm</span>
+<span id="cb30-115"><a href="#cb30-115" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hvi : v ∉ B.inputs := <span class="kw">fun</span> hi =&gt; Finset.disjoint_left<span class="fl">.1</span> hs hv hi</span>
+<span id="cb30-116"><a href="#cb30-116" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [trEmb_apply, tr_of_notMem hvi] <span class="kw">at</span> he</span>
+<span id="cb30-117"><a href="#cb30-117" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> Sum.inr_ne_inl he</span>
+<span id="cb30-118"><a href="#cb30-118" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-119"><a href="#cb30-119" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The hidden variables of a composite, for **arbitrary** interfaces: pass-through variables</span></span>
+<span id="cb30-120"><a href="#cb30-120" aria-hidden="true" tabindex="-1"></a><span class="do">on either side are allowed, and exactly the inner glued variables join the two hidden sets. -/</span></span>
+<span id="cb30-121"><a href="#cb30-121" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> hidden_compose_general :</span>
+<span id="cb30-122"><a href="#cb30-122" aria-hidden="true" tabindex="-1"></a>    (compose c).hidden =</span>
+<span id="cb30-123"><a href="#cb30-123" aria-hidden="true" tabindex="-1"></a>      (c.innerGlued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪</span>
+<span id="cb30-124"><a href="#cb30-124" aria-hidden="true" tabindex="-1"></a>        B.hidden.map c.trEmb := <span class="kw">by</span></span>
+<span id="cb30-125"><a href="#cb30-125" aria-hidden="true" tabindex="-1"></a>  <span class="cf">ext</span> v</span>
+<span id="cb30-126"><a href="#cb30-126" aria-hidden="true" tabindex="-1"></a>  <span class="cf">cases</span> v <span class="kw">with</span></span>
+<span id="cb30-127"><a href="#cb30-127" aria-hidden="true" tabindex="-1"></a>  | inl a =&gt;</span>
+<span id="cb30-128"><a href="#cb30-128" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hbh : Sum.inl a ∉ B.hidden.map c.trEmb :=</span>
+<span id="cb30-129"><a href="#cb30-129" aria-hidden="true" tabindex="-1"></a>      inl_notMem_map_of_disjoint c a B.hidden (hidden_disjoint_inputs B)</span>
+<span id="cb30-130"><a href="#cb30-130" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hin : (Sum.inl a : A.V ⊕ Priv B) ∈ A.inputs.map Function.Embedding.inl ↔ a ∈ A.inputs :=</span>
+<span id="cb30-131"><a href="#cb30-131" aria-hidden="true" tabindex="-1"></a>      Finset.mem_map&#39; _</span>
+<span id="cb30-132"><a href="#cb30-132" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hout : (Sum.inl a : A.V ⊕ Priv B) ∈ (A.outputs \ c.glued).map Function.Embedding.inl ↔</span>
+<span id="cb30-133"><a href="#cb30-133" aria-hidden="true" tabindex="-1"></a>        a ∈ A.outputs ∧ a ∉ c.glued :=</span>
+<span id="cb30-134"><a href="#cb30-134" aria-hidden="true" tabindex="-1"></a>      (Finset.mem_map&#39; _).trans Finset.mem_sdiff</span>
+<span id="cb30-135"><a href="#cb30-135" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hinner : (Sum.inl a : A.V ⊕ Priv B) ∈ c.innerGlued.map Function.Embedding.inl ↔</span>
+<span id="cb30-136"><a href="#cb30-136" aria-hidden="true" tabindex="-1"></a>        a ∈ c.glued ∧ a ∉ A.inputs ∧ Sum.inl a ∉ B.outputs.map c.trEmb :=</span>
+<span id="cb30-137"><a href="#cb30-137" aria-hidden="true" tabindex="-1"></a>      (Finset.mem_map&#39; _).trans Finset.mem_filter</span>
+<span id="cb30-138"><a href="#cb30-138" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hhid : (Sum.inl a : A.V ⊕ Priv B) ∈ A.hidden.map Function.Embedding.inl ↔</span>
+<span id="cb30-139"><a href="#cb30-139" aria-hidden="true" tabindex="-1"></a>        ¬(a ∈ A.inputs ∨ a ∈ A.outputs) :=</span>
+<span id="cb30-140"><a href="#cb30-140" aria-hidden="true" tabindex="-1"></a>      (Finset.mem_map&#39; _).trans (<span class="kw">by</span> <span class="cf">rw</span> [hidden, Finset.mem_compl, Finset.mem_union])</span>
+<span id="cb30-141"><a href="#cb30-141" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hidden, Finset.mem_compl]</span>
+<span id="cb30-142"><a href="#cb30-142" aria-hidden="true" tabindex="-1"></a>    change (Sum.inl a ∉ A.inputs.map Function.Embedding.inl ∪</span>
+<span id="cb30-143"><a href="#cb30-143" aria-hidden="true" tabindex="-1"></a>      ((A.outputs \ c.glued).map Function.Embedding.inl ∪ B.outputs.map c.trEmb)) ↔</span>
+<span id="cb30-144"><a href="#cb30-144" aria-hidden="true" tabindex="-1"></a>        Sum.inl a ∈ (c.innerGlued.map Function.Embedding.inl ∪</span>
+<span id="cb30-145"><a href="#cb30-145" aria-hidden="true" tabindex="-1"></a>          A.hidden.map Function.Embedding.inl) ∪ B.hidden.map c.trEmb</span>
+<span id="cb30-146"><a href="#cb30-146" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [Finset.mem_union, Finset.mem_union, Finset.mem_union, Finset.mem_union, hin, hout,</span>
+<span id="cb30-147"><a href="#cb30-147" aria-hidden="true" tabindex="-1"></a>      hinner, hhid]</span>
+<span id="cb30-148"><a href="#cb30-148" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [hbh, or_false]</span>
+<span id="cb30-149"><a href="#cb30-149" aria-hidden="true" tabindex="-1"></a>    <span class="co">-- Propositional reasoning, spelled out: `tauto` would unfold the memberships of the</span></span>
+<span id="cb30-150"><a href="#cb30-150" aria-hidden="true" tabindex="-1"></a>    <span class="co">-- composite, whose definition is large.</span></span>
+<span id="cb30-151"><a href="#cb30-151" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hg : a ∈ c.glued</span>
+<span id="cb30-152"><a href="#cb30-152" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> ho := glued_subset_outputs c hg</span>
+<span id="cb30-153"><a href="#cb30-153" aria-hidden="true" tabindex="-1"></a>      <span class="cf">constructor</span></span>
+<span id="cb30-154"><a href="#cb30-154" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">intro</span> h</span>
+<span id="cb30-155"><a href="#cb30-155" aria-hidden="true" tabindex="-1"></a>        <span class="cf">exact</span> Or.inl ⟨hg, <span class="kw">fun</span> hi =&gt; h (Or.inl hi), <span class="kw">fun</span> hbo =&gt; h (Or.inr (Or.inr hbo))⟩</span>
+<span id="cb30-156"><a href="#cb30-156" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rintro</span> (⟨-, hi, hbo⟩ | hn) (h | ⟨-, hng⟩ | h)</span>
+<span id="cb30-157"><a href="#cb30-157" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hi h</span>
+<span id="cb30-158"><a href="#cb30-158" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hng hg</span>
+<span id="cb30-159"><a href="#cb30-159" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hbo h</span>
+<span id="cb30-160"><a href="#cb30-160" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hn (Or.inl h)</span>
+<span id="cb30-161"><a href="#cb30-161" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hng hg</span>
+<span id="cb30-162"><a href="#cb30-162" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hn (Or.inr ho)</span>
+<span id="cb30-163"><a href="#cb30-163" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> hb : Sum.inl a ∉ B.outputs.map c.trEmb :=</span>
+<span id="cb30-164"><a href="#cb30-164" aria-hidden="true" tabindex="-1"></a>        <span class="kw">fun</span> h =&gt; hg (mem_glued_of_inl_mem_map c a h)</span>
+<span id="cb30-165"><a href="#cb30-165" aria-hidden="true" tabindex="-1"></a>      <span class="cf">constructor</span></span>
+<span id="cb30-166"><a href="#cb30-166" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">intro</span> h</span>
+<span id="cb30-167"><a href="#cb30-167" aria-hidden="true" tabindex="-1"></a>        <span class="cf">exact</span> Or.inr <span class="kw">fun</span> h&#39; =&gt; h&#39;.elim (<span class="kw">fun</span> hi =&gt; h (Or.inl hi))</span>
+<span id="cb30-168"><a href="#cb30-168" aria-hidden="true" tabindex="-1"></a>          (<span class="kw">fun</span> ho =&gt; h (Or.inr (Or.inl ⟨ho, hg⟩)))</span>
+<span id="cb30-169"><a href="#cb30-169" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rintro</span> (⟨hg&#39;, -, -⟩ | hn) (h | ⟨ho, -⟩ | h)</span>
+<span id="cb30-170"><a href="#cb30-170" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hg hg&#39;</span>
+<span id="cb30-171"><a href="#cb30-171" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hg hg&#39;</span>
+<span id="cb30-172"><a href="#cb30-172" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hg hg&#39;</span>
+<span id="cb30-173"><a href="#cb30-173" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hn (Or.inl h)</span>
+<span id="cb30-174"><a href="#cb30-174" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hn (Or.inr ho)</span>
+<span id="cb30-175"><a href="#cb30-175" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> hb h</span>
+<span id="cb30-176"><a href="#cb30-176" aria-hidden="true" tabindex="-1"></a>  | inr b =&gt;</span>
+<span id="cb30-177"><a href="#cb30-177" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hidden, Finset.mem_compl]</span>
+<span id="cb30-178"><a href="#cb30-178" aria-hidden="true" tabindex="-1"></a>    change (Sum.inr b ∉ A.inputs.map Function.Embedding.inl ∪</span>
+<span id="cb30-179"><a href="#cb30-179" aria-hidden="true" tabindex="-1"></a>      ((A.outputs \ c.glued).map Function.Embedding.inl ∪ B.outputs.map c.trEmb)) ↔</span>
+<span id="cb30-180"><a href="#cb30-180" aria-hidden="true" tabindex="-1"></a>        Sum.inr b ∈ (c.innerGlued.map Function.Embedding.inl ∪</span>
+<span id="cb30-181"><a href="#cb30-181" aria-hidden="true" tabindex="-1"></a>          A.hidden.map Function.Embedding.inl) ∪ B.hidden.map c.trEmb</span>
+<span id="cb30-182"><a href="#cb30-182" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [Finset.mem_union, inr_mem_map_trEmb (c := c)]</span>
+<span id="cb30-183"><a href="#cb30-183" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> [hidden, b.property]</span>
+<span id="cb30-184"><a href="#cb30-184" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-185"><a href="#cb30-185" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The inner glued variables are exactly the glued variables that the composite hides. -/</span></span>
+<span id="cb30-186"><a href="#cb30-186" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> innerGlued_eq_filter_hidden :</span>
+<span id="cb30-187"><a href="#cb30-187" aria-hidden="true" tabindex="-1"></a>    c.innerGlued =</span>
+<span id="cb30-188"><a href="#cb30-188" aria-hidden="true" tabindex="-1"></a>      c.glued.filter <span class="kw">fun</span> a =&gt; (Sum.inl a : A.V ⊕ Priv B) ∈ (compose c).hidden := <span class="kw">by</span></span>
+<span id="cb30-189"><a href="#cb30-189" aria-hidden="true" tabindex="-1"></a>  <span class="cf">ext</span> a</span>
+<span id="cb30-190"><a href="#cb30-190" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [Finset.mem_filter, hidden_compose_general c]</span>
+<span id="cb30-191"><a href="#cb30-191" aria-hidden="true" tabindex="-1"></a>  <span class="cf">constructor</span></span>
+<span id="cb30-192"><a href="#cb30-192" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">intro</span> h</span>
+<span id="cb30-193"><a href="#cb30-193" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ⟨innerGlued_subset_glued c h,</span>
+<span id="cb30-194"><a href="#cb30-194" aria-hidden="true" tabindex="-1"></a>      Finset.mem_union_left _ (Finset.mem_union_left _ (Finset.mem_map_of_mem _ h))⟩</span>
+<span id="cb30-195"><a href="#cb30-195" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rintro</span> ⟨hg, h⟩</span>
+<span id="cb30-196"><a href="#cb30-196" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> Finset.mem_union<span class="fl">.1</span> h <span class="kw">with</span> h | h</span>
+<span id="cb30-197"><a href="#cb30-197" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rcases</span> Finset.mem_union<span class="fl">.1</span> h <span class="kw">with</span> h | h</span>
+<span id="cb30-198"><a href="#cb30-198" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> (Finset.mem_map&#39; _).<span class="dv">1</span> h</span>
+<span id="cb30-199"><a href="#cb30-199" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exfalso</span></span>
+<span id="cb30-200"><a href="#cb30-200" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> hah : a ∈ A.hidden := (Finset.mem_map&#39; _).<span class="dv">1</span> h</span>
+<span id="cb30-201"><a href="#cb30-201" aria-hidden="true" tabindex="-1"></a>        <span class="cf">exact</span> Finset.mem_compl<span class="fl">.1</span> hah (Finset.mem_union_right _ (glued_subset_outputs c hg))</span>
+<span id="cb30-202"><a href="#cb30-202" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">exact</span> absurd h (inl_notMem_map_of_disjoint c a B.hidden (hidden_disjoint_inputs B))</span>
+<span id="cb30-203"><a href="#cb30-203" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-204"><a href="#cb30-204" aria-hidden="true" tabindex="-1"></a><span class="do">/-- With disjoint input and output sets on both networks there is no pass-through, and every</span></span>
+<span id="cb30-205"><a href="#cb30-205" aria-hidden="true" tabindex="-1"></a><span class="do">glued variable is inner. -/</span></span>
+<span id="cb30-206"><a href="#cb30-206" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> innerGlued_eq_glued (hA : A.inputs ∩ A.outputs = ∅)</span>
+<span id="cb30-207"><a href="#cb30-207" aria-hidden="true" tabindex="-1"></a>    (hB : B.inputs ∩ B.outputs = ∅) : c.innerGlued = c.glued := <span class="kw">by</span></span>
+<span id="cb30-208"><a href="#cb30-208" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> Finset.filter_true_of_mem <span class="kw">fun</span> a ha =&gt; ⟨fun hi =&gt; ?_, <span class="kw">fun</span> hm =&gt; ?_⟩</span>
+<span id="cb30-209"><a href="#cb30-209" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := Finset.mem_inter<span class="fl">.2</span> ⟨hi, glued_subset_outputs c ha⟩</span>
+<span id="cb30-210"><a href="#cb30-210" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hA] <span class="kw">at</span> this</span>
+<span id="cb30-211"><a href="#cb30-211" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Finset.notMem_empty _ this</span>
+<span id="cb30-212"><a href="#cb30-212" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">obtain</span> ⟨w, hwo, he⟩ := Finset.mem_map<span class="fl">.1</span> hm</span>
+<span id="cb30-213"><a href="#cb30-213" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hw : w ∈ B.inputs</span>
+<span id="cb30-214"><a href="#cb30-214" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> := Finset.mem_inter<span class="fl">.2</span> ⟨hw, hwo⟩</span>
+<span id="cb30-215"><a href="#cb30-215" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hB] <span class="kw">at</span> this</span>
+<span id="cb30-216"><a href="#cb30-216" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> Finset.notMem_empty _ this</span>
+<span id="cb30-217"><a href="#cb30-217" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [trEmb_apply, tr_of_notMem hw] <span class="kw">at</span> he</span>
+<span id="cb30-218"><a href="#cb30-218" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> absurd he (<span class="kw">by</span> <span class="cf">simp</span>)</span>
+<span id="cb30-219"><a href="#cb30-219" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-220"><a href="#cb30-220" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The hidden variables of a composite, with unglued outputs retained. Total matching is</span></span>
+<span id="cb30-221"><a href="#cb30-221" aria-hidden="true" tabindex="-1"></a><span class="do">not required. -/</span></span>
+<span id="cb30-222"><a href="#cb30-222" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> hidden_compose (hA : A.inputs ∩ A.outputs = ∅)</span>
+<span id="cb30-223"><a href="#cb30-223" aria-hidden="true" tabindex="-1"></a>    (hB : B.inputs ∩ B.outputs = ∅) :</span>
+<span id="cb30-224"><a href="#cb30-224" aria-hidden="true" tabindex="-1"></a>    (compose c).hidden =</span>
+<span id="cb30-225"><a href="#cb30-225" aria-hidden="true" tabindex="-1"></a>      (c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪</span>
+<span id="cb30-226"><a href="#cb30-226" aria-hidden="true" tabindex="-1"></a>        B.hidden.map c.trEmb := <span class="kw">by</span></span>
+<span id="cb30-227"><a href="#cb30-227" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hidden_compose_general, innerGlued_eq_glued c hA hB]</span>
+<span id="cb30-228"><a href="#cb30-228" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-229"><a href="#cb30-229" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Proposition 3 with pass-through.** For arbitrary interfaces -- copied or passed-through</span></span>
+<span id="cb30-230"><a href="#cb30-230" aria-hidden="true" tabindex="-1"></a><span class="do">variables on either side, partial gluing, no locality, normalisation or matching assumptions --</span></span>
+<span id="cb30-231"><a href="#cb30-231" aria-hidden="true" tabindex="-1"></a><span class="do">the composite&#39;s open semantics is the product of the two own-variable open semantics summed</span></span>
+<span id="cb30-232"><a href="#cb30-232" aria-hidden="true" tabindex="-1"></a><span class="do">over the inner glued variables only. A glued variable that stays on the composite&#39;s interface</span></span>
+<span id="cb30-233"><a href="#cb30-233" aria-hidden="true" tabindex="-1"></a><span class="do">(an input of `A`, or passed by `B` to its outputs) keeps its visible value: it is never summed. -/</span></span>
+<span id="cb30-234"><a href="#cb30-234" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> osem_compose_passthrough (κA : A.Kernel R) (κB : B.Kernel R)</span>
+<span id="cb30-235"><a href="#cb30-235" aria-hidden="true" tabindex="-1"></a>    (x : (compose c).Assignment) :</span>
+<span id="cb30-236"><a href="#cb30-236" aria-hidden="true" tabindex="-1"></a>    osem (compose c) (composeKernel c κA κB) x =</span>
+<span id="cb30-237"><a href="#cb30-237" aria-hidden="true" tabindex="-1"></a>      marg (c.innerGlued.map Function.Embedding.inl)</span>
+<span id="cb30-238"><a href="#cb30-238" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> y =&gt; osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := <span class="kw">by</span></span>
+<span id="cb30-239"><a href="#cb30-239" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hg : Disjoint (c.innerGlued.map Function.Embedding.inl : Finset (composeNet c).V)</span>
+<span id="cb30-240"><a href="#cb30-240" aria-hidden="true" tabindex="-1"></a>      (A.hidden.map Function.Embedding.inl) := <span class="kw">by</span></span>
+<span id="cb30-241"><a href="#cb30-241" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [Finset.disjoint_left]</span>
+<span id="cb30-242"><a href="#cb30-242" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv hh</span>
+<span id="cb30-243"><a href="#cb30-243" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨a, ha, rfl⟩ := Finset.mem_map<span class="fl">.1</span> hv</span>
+<span id="cb30-244"><a href="#cb30-244" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hah : a ∈ A.hidden := <span class="kw">by</span> <span class="cf">simpa</span> <span class="kw">using</span> hh</span>
+<span id="cb30-245"><a href="#cb30-245" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Finset.mem_compl<span class="fl">.1</span> hah (Finset.mem_union_right _</span>
+<span id="cb30-246"><a href="#cb30-246" aria-hidden="true" tabindex="-1"></a>      (glued_subset_outputs c (innerGlued_subset_glued c ha)))</span>
+<span id="cb30-247"><a href="#cb30-247" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hS : c.innerGlued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl</span>
+<span id="cb30-248"><a href="#cb30-248" aria-hidden="true" tabindex="-1"></a>      ⊆ varsA c := <span class="kw">by</span></span>
+<span id="cb30-249"><a href="#cb30-249" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv</span>
+<span id="cb30-250"><a href="#cb30-250" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> Finset.mem_union<span class="fl">.1</span> hv <span class="kw">with</span> hv | hv &lt;;&gt;</span>
+<span id="cb30-251"><a href="#cb30-251" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨a, _, rfl⟩ := Finset.mem_map<span class="fl">.1</span> hv &lt;;&gt; <span class="cf">exact</span> inl_mem_varsA a</span>
+<span id="cb30-252"><a href="#cb30-252" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hT : B.hidden.map c.trEmb ⊆ varsB c := <span class="kw">by</span></span>
+<span id="cb30-253"><a href="#cb30-253" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv</span>
+<span id="cb30-254"><a href="#cb30-254" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨b, hb, rfl⟩ := Finset.mem_map<span class="fl">.1</span> hv</span>
+<span id="cb30-255"><a href="#cb30-255" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hbi : b ∉ B.inputs := <span class="kw">fun</span> hi =&gt;</span>
+<span id="cb30-256"><a href="#cb30-256" aria-hidden="true" tabindex="-1"></a>      Finset.disjoint_left<span class="fl">.1</span> (hidden_disjoint_inputs B) hb hi</span>
+<span id="cb30-257"><a href="#cb30-257" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [trEmb_apply, tr_of_notMem hbi]</span>
+<span id="cb30-258"><a href="#cb30-258" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> inr_mem_varsB _</span>
+<span id="cb30-259"><a href="#cb30-259" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> osem</span>
+<span id="cb30-260"><a href="#cb30-260" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hidden_compose_general c, marg_joint_compose_split κA κB hS hT,</span>
+<span id="cb30-261"><a href="#cb30-261" aria-hidden="true" tabindex="-1"></a>    marg_union_disjoint hg]</span>
+<span id="cb30-262"><a href="#cb30-262" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> heq : ∀ z, marg (B.hidden.map c.trEmb)</span>
+<span id="cb30-263"><a href="#cb30-263" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">fun</span> w =&gt; joint κB (restrictB c w)) z = marg B.hidden (joint κB) (restrictB c z) :=</span>
+<span id="cb30-264"><a href="#cb30-264" aria-hidden="true" tabindex="-1"></a>    marg_restrictB c B.hidden (hidden_disjoint_inputs B) (joint κB)</span>
+<span id="cb30-265"><a href="#cb30-265" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp_rw</span> [heq]</span>
+<span id="cb30-266"><a href="#cb30-266" aria-hidden="true" tabindex="-1"></a>  <span class="cf">apply</span> congrArg (<span class="kw">fun</span> F =&gt; marg (c.innerGlued.map Function.Embedding.inl) F x)</span>
+<span id="cb30-267"><a href="#cb30-267" aria-hidden="true" tabindex="-1"></a>  <span class="cf">funext</span> y</span>
+<span id="cb30-268"><a href="#cb30-268" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span></span>
+<span id="cb30-269"><a href="#cb30-269" aria-hidden="true" tabindex="-1"></a>    _ = marg (A.hidden.map Function.Embedding.inl)</span>
+<span id="cb30-270"><a href="#cb30-270" aria-hidden="true" tabindex="-1"></a>          (<span class="kw">fun</span> z =&gt; joint κA (restrictA c z)) y *</span>
+<span id="cb30-271"><a href="#cb30-271" aria-hidden="true" tabindex="-1"></a>            marg B.hidden (joint κB) (restrictB c y) := <span class="kw">by</span></span>
+<span id="cb30-272"><a href="#cb30-272" aria-hidden="true" tabindex="-1"></a>      <span class="cf">unfold</span> marg</span>
+<span id="cb30-273"><a href="#cb30-273" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [Finset.sum_mul]</span>
+<span id="cb30-274"><a href="#cb30-274" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> Finset.sum_congr <span class="cf">rfl</span> <span class="kw">fun</span> z hz =&gt; ?_</span>
+<span id="cb30-275"><a href="#cb30-275" aria-hidden="true" tabindex="-1"></a>      <span class="cf">dsimp</span> only</span>
+<span id="cb30-276"><a href="#cb30-276" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [restrictB_eq_of_mem_fibre_hidden c y z hz]</span>
+<span id="cb30-277"><a href="#cb30-277" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span> <span class="cf">rw</span> [marg_restrictA]</span>
+<span id="cb30-278"><a href="#cb30-278" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-279"><a href="#cb30-279" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Proposition 3, including partial gluing.** Sum the product of the two own-variable</span></span>
+<span id="cb30-280"><a href="#cb30-280" aria-hidden="true" tabindex="-1"></a><span class="do">open semantics over the glued interface. No stochastic or locality assumptions are needed.</span></span>
+<span id="cb30-281"><a href="#cb30-281" aria-hidden="true" tabindex="-1"></a><span class="do">Without pass-through every glued variable is inner, so this is `osem_compose_passthrough`. -/</span></span>
+<span id="cb30-282"><a href="#cb30-282" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> osem_compose_glue (κA : A.Kernel R) (κB : B.Kernel R)</span>
+<span id="cb30-283"><a href="#cb30-283" aria-hidden="true" tabindex="-1"></a>    (hA : A.inputs ∩ A.outputs = ∅) (hB : B.inputs ∩ B.outputs = ∅)</span>
+<span id="cb30-284"><a href="#cb30-284" aria-hidden="true" tabindex="-1"></a>    (x : (compose c).Assignment) :</span>
+<span id="cb30-285"><a href="#cb30-285" aria-hidden="true" tabindex="-1"></a>    osem (compose c) (composeKernel c κA κB) x =</span>
+<span id="cb30-286"><a href="#cb30-286" aria-hidden="true" tabindex="-1"></a>      marg (c.glued.map Function.Embedding.inl)</span>
+<span id="cb30-287"><a href="#cb30-287" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> y =&gt; osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := <span class="kw">by</span></span>
+<span id="cb30-288"><a href="#cb30-288" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [← innerGlued_eq_glued c hA hB]</span>
+<span id="cb30-289"><a href="#cb30-289" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> osem_compose_passthrough c κA κB x</span>
+<span id="cb30-290"><a href="#cb30-290" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-291"><a href="#cb30-291" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The original Roadmap statement, with its original (now known to be stronger than</span></span>
+<span id="cb30-292"><a href="#cb30-292" aria-hidden="true" tabindex="-1"></a><span class="do">necessary) premises retained. `osem_compose_glue` proves it without locality, normalisation,</span></span>
+<span id="cb30-293"><a href="#cb30-293" aria-hidden="true" tabindex="-1"></a><span class="do">or surjectivity of the interface map. -/</span></span>
+<span id="cb30-294"><a href="#cb30-294" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> osem_compose (κA : A.Kernel R) (κB : B.Kernel R)</span>
+<span id="cb30-295"><a href="#cb30-295" aria-hidden="true" tabindex="-1"></a>    (_hlocA : ∀ m, Local κA m) (_hlocB : ∀ m, Local κB m) (_hnormB : ∀ m, Normalised κB m)</span>
+<span id="cb30-296"><a href="#cb30-296" aria-hidden="true" tabindex="-1"></a>    (hA : A.inputs ∩ A.outputs = ∅) (hB : B.inputs ∩ B.outputs = ∅)</span>
+<span id="cb30-297"><a href="#cb30-297" aria-hidden="true" tabindex="-1"></a>    (_hι : Function.Surjective c.ι) (x : (compose c).Assignment) :</span>
+<span id="cb30-298"><a href="#cb30-298" aria-hidden="true" tabindex="-1"></a>    osem (compose c) (composeKernel c κA κB) x =</span>
+<span id="cb30-299"><a href="#cb30-299" aria-hidden="true" tabindex="-1"></a>      marg (c.glued.map Function.Embedding.inl)</span>
+<span id="cb30-300"><a href="#cb30-300" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> y =&gt; osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := <span class="kw">by</span></span>
+<span id="cb30-301"><a href="#cb30-301" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> osem_compose_glue c κA κB hA hB x</span>
+<span id="cb30-302"><a href="#cb30-302" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-303"><a href="#cb30-303" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.OpenFinBayesNet.Composable</span></code></pre></div>
 <!-- BayesianNetworksProofs/Finite/BoundaryCases.lean -->
 <h1
 id="bayesiannetworksproofs.finite.boundarycases">BayesianNetworksProofs.Finite.BoundaryCases</h1>
@@ -2396,12 +2508,15 @@ class="sourceCode lean"><code class="sourceCode lean"><span id="cb31-1"><a href=
 <span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Data.Finset.Card</span></code></pre></div>
 <p><strong>Boundary counterexamples and representation limits</strong>
 (SPEC §13, §61 and §62.1).</p>
-<p>The own-semantics composition formula proved in
-<code>OpenSemantics.lean</code> intentionally excludes pass-through
-inputs/outputs. On the binary identity wire, the open semantics is one,
-while blindly summing its visible glued state gives two. This refutes
-the formula with those side conditions removed; it does not refute the
-original, correctly qualified Roadmap claim.</p>
+<p>The own-semantics formula <code>osem_compose_glue</code> sums over
+every glued variable, so it needs disjoint inputs/outputs on both
+networks. On the binary identity wire, the open semantics is one, while
+blindly summing its visible glued state gives two:
+<code>passthrough_formula_fails</code> refutes that formula with its
+side conditions removed. <code>osem_compose_passthrough</code> is the
+formula for arbitrary interfaces: it sums only the inner glued
+variables, and on the same wire it gives one
+(<code>passthrough_formula_holds_on_wire</code>).</p>
 <p>There is a separate structural limitation: with no mechanisms, the
 typed-interface rule forces every variable to be an input. Since outputs
 are a subset of the apex, their number cannot exceed the input count.
@@ -2475,7 +2590,18 @@ class="sourceCode lean"><code class="sourceCode lean"><span id="cb32-1"><a href=
 <span id="cb32-62"><a href="#cb32-62" aria-hidden="true" tabindex="-1"></a>        binaryWireAssignment = <span class="dv">2</span> := <span class="kw">by</span></span>
 <span id="cb32-63"><a href="#cb32-63" aria-hidden="true" tabindex="-1"></a>  <span class="cf">decide</span></span>
 <span id="cb32-64"><a href="#cb32-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-65"><a href="#cb32-65" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.OpenFinBayesNet</span></code></pre></div>
+<span id="cb32-65"><a href="#cb32-65" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The pass-through formula `osem_compose_passthrough` on the same wire. The glued variable is</span></span>
+<span id="cb32-66"><a href="#cb32-66" aria-hidden="true" tabindex="-1"></a><span class="do">an input of `A` and passed straight to `B`&#39;s outputs, so it stays on the composite&#39;s interface:</span></span>
+<span id="cb32-67"><a href="#cb32-67" aria-hidden="true" tabindex="-1"></a><span class="do">it is not inner, nothing is summed, and the formula gives the true value one. -/</span></span>
+<span id="cb32-68"><a href="#cb32-68" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> passthrough_formula_holds_on_wire :</span>
+<span id="cb32-69"><a href="#cb32-69" aria-hidden="true" tabindex="-1"></a>    binaryWireMatch.innerGlued = ∅ ∧</span>
+<span id="cb32-70"><a href="#cb32-70" aria-hidden="true" tabindex="-1"></a>      marg (binaryWireMatch.innerGlued.map Function.Embedding.inl)</span>
+<span id="cb32-71"><a href="#cb32-71" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> y =&gt; osem binaryWire binaryWireKernel (Composable.restrictA binaryWireMatch y) *</span>
+<span id="cb32-72"><a href="#cb32-72" aria-hidden="true" tabindex="-1"></a>          osem binaryWire binaryWireKernel (Composable.restrictB binaryWireMatch y))</span>
+<span id="cb32-73"><a href="#cb32-73" aria-hidden="true" tabindex="-1"></a>        binaryWireAssignment = <span class="dv">1</span> := <span class="kw">by</span></span>
+<span id="cb32-74"><a href="#cb32-74" aria-hidden="true" tabindex="-1"></a>  <span class="cf">decide</span></span>
+<span id="cb32-75"><a href="#cb32-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-76"><a href="#cb32-76" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.OpenFinBayesNet</span></code></pre></div>
 <!-- BayesianNetworksProofs/Markov/Basic.lean -->
 <h1
 id="bayesiannetworksproofs.markov.basic">BayesianNetworksProofs.Markov.Basic</h1>
@@ -5300,11 +5426,12 @@ separately in <code>CategoricalBayesianNetworks.jl/proofs/</code> (ADR
 functor into FinStoch preserving copy and discard
 (<code>OpenNet.Interpretation.functor</code>), whose composition formula
 <code>Interpretation.kernel_comp</code> covers copied and pass-through
-outputs. What remains here is a pass-through <code>osem</code>
-composition formula for this project’s own <code>OpenFinBayesNet</code>
-representation, whose <code>osem_compose_glue</code> still requires
-disjoint input/output sets. The category of stochastic kernels is a
-different result, provided by
+outputs. This project’s own <code>OpenFinBayesNet</code> now has its
+pass-through formula too: <code>osem_compose_passthrough</code> in
+<code>Finite/OpenSemantics.lean</code> sums only the glued variables the
+composite hides and needs no hypotheses; <code>osem_compose_glue</code>
+is its disjoint-interface special case. The category of stochastic
+kernels is a different result, provided by
 <code>FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean</code>.</p>
 </body>
 </html>

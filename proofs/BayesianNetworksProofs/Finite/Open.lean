@@ -69,8 +69,9 @@ assignment of the composite as an assignment of `A` and of `B` (a glued variable
   over the interface of the product of the two open semantics. Taking `S` to be `A`'s hidden
   variables together with the glued interface and `T` to be `B`'s hidden variables gives
   `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` when neither network has pass-through variables. The transfer to the
-  open semantics of `A` and `B` on their own variable types is now proved in
-  `Finite/OpenSemantics.lean`; partial matching is permitted.
+  open semantics of `A` and `B` on their own variable types is proved in
+  `Finite/OpenSemantics.lean`, with partial matching and, in `osem_compose_passthrough`,
+  arbitrary pass-through on either side.
 -/
 
 namespace BayesianNetworksProofs

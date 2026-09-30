@@ -44,9 +44,11 @@ and the tensor `otimes` of open networks (SPEC §13). Three layers are formalise
 * `Finite/Intervention.lean` and `Finite/Tensor.lean`: Propositions 4 and 2.
 * `Finite/Open.lean`: the typed-interface rule, open-network closure and split composition.
 * `Finite/OpenSemantics.lean`: own-variable open semantics under partial gluing; the original
-  `osem_compose` and a stronger theorem without locality, normalisation or total matching.
-* `Finite/BoundaryCases.lean`: pass-through counterexample and mechanism-free copying
-  limitation of subset feet.
+  `osem_compose`, a stronger theorem without locality, normalisation or total matching, and
+  `osem_compose_passthrough` for arbitrary pass-through, with no hypotheses.
+* `Finite/BoundaryCases.lean`: the pass-through counterexample to the glue formula, the
+  pass-through formula checked on the same wire, and the mechanism-free copying limitation of
+  subset feet.
 * `Markov/Basic.lean`: consequences of Mathlib's abstract Markov/copy-discard classes.
 * `Finite/Probability.lean`: Propositions 1 and 4 at `R := ℝ≥0`.
 * `Roadmap.lean`: remaining categorical and representation questions; no unproved declarations.
@@ -76,7 +78,7 @@ and the tensor `otimes` of open networks (SPEC §13). Three layers are formalise
 |:--------------|:-------------------|:---------------|
 | Prop 1 — BN evaluation, `⟦G⟧(x) = ∏_v κ_v(x_v ∣ x_pa(v))` | `sum_joint_eq_one` (the product is a distribution), `evalSeq_eq_joint` (the sequential evaluator computes it) | `joint_distribution(bn)`, `validate(bn; closed=true)`, `topological_order` |
 | Prop 2 — tensor compositionality, `⟦A ⊗ B⟧ = ⟦A⟧ ⊗ ⟦B⟧` | `joint_tensor`, `closed_tensor`, `normalised_tensor`, `local_tensor`, `TopoOrder.tensor` | `otimes(A, B)` of `OpenBayesNet`s |
-| Prop 3 — sequential compositionality, `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` | `marg_joint_compose_split`, `osem_compose`, `osem_compose_glue`; the own-variable formulas require disjoint inputs/outputs on both networks | `compose(A, B)`, `glue(A, B; along)` in the categorical package |
+| Prop 3 — sequential compositionality, `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` | `marg_joint_compose_split`, `osem_compose`, `osem_compose_glue` (disjoint inputs/outputs), `osem_compose_passthrough` (arbitrary pass-through) | `compose(A, B)`, `glue(A, B; along)` in the categorical package |
 | SPEC §13 revision note — pushout composition preserves "at most one mechanism per variable" | `composeNet_target_injective`, `compose_input_exogenous`, `compose_exogenous_input`, `composeTopo`, `compose` | `Open(bn; inputs, outputs)`, `validate(::OpenBayesNet)`, `compose`, `glue` |
 | Prop 4 — hard intervention, truncated factorisation of `do(X = x)` | `joint_intervene`, `normalised_intervene`, `local_cut`, `sum_joint_intervene_eq_one` | `do_intervention(bn, :X => x)` |
 | Props 5–7 — influence diagrams | `InfluenceDiagrams.jl/proofs` (depends on this project by path) | `InfluenceDiagrams.jl` |

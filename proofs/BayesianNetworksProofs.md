@@ -49,9 +49,11 @@ and the tensor `otimes` of open networks (SPEC §13). Three layers are formalise
 * `Finite/Intervention.lean` and `Finite/Tensor.lean`: Propositions 4 and 2.
 * `Finite/Open.lean`: the typed-interface rule, open-network closure and split composition.
 * `Finite/OpenSemantics.lean`: own-variable open semantics under partial gluing; the original
-  `osem_compose` and a stronger theorem without locality, normalisation or total matching.
-* `Finite/BoundaryCases.lean`: pass-through counterexample and mechanism-free copying
-  limitation of subset feet.
+  `osem_compose`, a stronger theorem without locality, normalisation or total matching, and
+  `osem_compose_passthrough` for arbitrary pass-through, with no hypotheses.
+* `Finite/BoundaryCases.lean`: the pass-through counterexample to the glue formula, the
+  pass-through formula checked on the same wire, and the mechanism-free copying limitation of
+  subset feet.
 * `Markov/Basic.lean`: consequences of Mathlib's abstract Markov/copy-discard classes.
 * `Finite/Probability.lean`: Propositions 1 and 4 at `R := ℝ≥0`.
 * `Roadmap.lean`: remaining categorical and representation questions; no unproved declarations.
@@ -81,7 +83,7 @@ and the tensor `otimes` of open networks (SPEC §13). Three layers are formalise
 |:--------------|:-------------------|:---------------|
 | Prop 1 — BN evaluation, `⟦G⟧(x) = ∏_v κ_v(x_v ∣ x_pa(v))` | `sum_joint_eq_one` (the product is a distribution), `evalSeq_eq_joint` (the sequential evaluator computes it) | `joint_distribution(bn)`, `validate(bn; closed=true)`, `topological_order` |
 | Prop 2 — tensor compositionality, `⟦A ⊗ B⟧ = ⟦A⟧ ⊗ ⟦B⟧` | `joint_tensor`, `closed_tensor`, `normalised_tensor`, `local_tensor`, `TopoOrder.tensor` | `otimes(A, B)` of `OpenBayesNet`s |
-| Prop 3 — sequential compositionality, `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` | `marg_joint_compose_split`, `osem_compose`, `osem_compose_glue`; the own-variable formulas require disjoint inputs/outputs on both networks | `compose(A, B)`, `glue(A, B; along)` in the categorical package |
+| Prop 3 — sequential compositionality, `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` | `marg_joint_compose_split`, `osem_compose`, `osem_compose_glue` (disjoint inputs/outputs), `osem_compose_passthrough` (arbitrary pass-through) | `compose(A, B)`, `glue(A, B; along)` in the categorical package |
 | SPEC §13 revision note — pushout composition preserves "at most one mechanism per variable" | `composeNet_target_injective`, `compose_input_exogenous`, `compose_exogenous_input`, `composeTopo`, `compose` | `Open(bn; inputs, outputs)`, `validate(::OpenBayesNet)`, `compose`, `glue` |
 | Prop 4 — hard intervention, truncated factorisation of `do(X = x)` | `joint_intervene`, `normalised_intervene`, `local_cut`, `sum_joint_intervene_eq_one` | `do_intervention(bn, :X => x)` |
 | Props 5–7 — influence diagrams | `InfluenceDiagrams.jl/proofs` (depends on this project by path) | `InfluenceDiagrams.jl` |
@@ -1429,8 +1431,9 @@ assignment of the composite as an assignment of `A` and of `B` (a glued variable
   over the interface of the product of the two open semantics. Taking `S` to be `A`'s hidden
   variables together with the glued interface and `T` to be `B`'s hidden variables gives
   `⟦B ∘ A⟧ = ⟦B⟧ ∘ ⟦A⟧` when neither network has pass-through variables. The transfer to the
-  open semantics of `A` and `B` on their own variable types is now proved in
-  `Finite/OpenSemantics.lean`; partial matching is permitted.
+  open semantics of `A` and `B` on their own variable types is proved in
+  `Finite/OpenSemantics.lean`, with partial matching and, in `osem_compose_passthrough`,
+  arbitrary pass-through on either side.
 
 ```lean
 namespace BayesianNetworksProofs
@@ -1879,9 +1882,11 @@ identities. The resulting composition theorem permits a partial interface match 
 not only a total match (`compose`), and needs neither kernel locality nor normalisation:
 the equality is an algebraic identity of finite sums and products.
 
-Both networks must have disjoint input and output sets for the formula here, which sums
-over every glued variable. Pass-through variables require a different formula retaining
-visible interface values; they must not be silently integrated out.
+`osem_compose_passthrough` is the formula for arbitrary interfaces. A glued variable that
+stays on the composite's interface -- an input of `A`, or passed by `B` straight to its
+outputs -- keeps its visible value and is never summed; only the `innerGlued` variables are.
+It needs no hypotheses at all. With disjoint input and output sets on both networks every
+glued variable is inner (`innerGlued_eq_glued`), which gives `osem_compose_glue`.
 
 ```lean
 set_option autoImplicit false
@@ -1975,6 +1980,134 @@ theorem restrictB_eq_of_mem_fibre_hidden (x y : (composeNet c).Assignment)
   · rw [restrictB_of_notMem c y hv, restrictB_of_notMem c x hv]
     exact mem_fibre.1 hy _ (by simp)
 
+/-- The glued variables that the composite hides. A glued variable stays on the composite's
+interface, and must not be summed, when it is an input of `A` (a pass-through on `A`'s side,
+which remains a composite input) or when `B` passes it straight to its outputs (a
+pass-through on `B`'s side, which becomes a composite output). Only the rest is internal. -/
+def innerGlued : Finset A.V :=
+  c.glued.filter fun a => a ∉ A.inputs ∧ Sum.inl a ∉ B.outputs.map c.trEmb
+
+theorem innerGlued_subset_glued : c.innerGlued ⊆ c.glued := Finset.filter_subset _ _
+
+/-- An `A` variable that `B`'s outputs reach through the right leg is glued. -/
+theorem mem_glued_of_inl_mem_map (a : A.V) (h : Sum.inl a ∈ B.outputs.map c.trEmb) :
+    a ∈ c.glued := by
+  obtain ⟨w, _, he⟩ := Finset.mem_map.1 h
+  by_cases hw : w ∈ B.inputs
+  · rw [trEmb_apply, tr_of_mem hw, Sum.inl.injEq] at he
+    exact Finset.mem_image.2 ⟨⟨w, hw⟩, Finset.mem_univ _, he⟩
+  · rw [trEmb_apply, tr_of_notMem hw] at he
+    exact absurd he (by simp)
+
+theorem inl_notMem_map_of_disjoint (a : A.V) (S : Finset B.V) (hs : Disjoint S B.inputs) :
+    Sum.inl a ∉ S.map c.trEmb := by
+  intro hm
+  obtain ⟨v, hv, he⟩ := Finset.mem_map.1 hm
+  have hvi : v ∉ B.inputs := fun hi => Finset.disjoint_left.1 hs hv hi
+  rw [trEmb_apply, tr_of_notMem hvi] at he
+  exact Sum.inr_ne_inl he
+
+/-- The hidden variables of a composite, for **arbitrary** interfaces: pass-through variables
+on either side are allowed, and exactly the inner glued variables join the two hidden sets. -/
+theorem hidden_compose_general :
+    (compose c).hidden =
+      (c.innerGlued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪
+        B.hidden.map c.trEmb := by
+  ext v
+  cases v with
+  | inl a =>
+    have hbh : Sum.inl a ∉ B.hidden.map c.trEmb :=
+      inl_notMem_map_of_disjoint c a B.hidden (hidden_disjoint_inputs B)
+    have hin : (Sum.inl a : A.V ⊕ Priv B) ∈ A.inputs.map Function.Embedding.inl ↔ a ∈ A.inputs :=
+      Finset.mem_map' _
+    have hout : (Sum.inl a : A.V ⊕ Priv B) ∈ (A.outputs \ c.glued).map Function.Embedding.inl ↔
+        a ∈ A.outputs ∧ a ∉ c.glued :=
+      (Finset.mem_map' _).trans Finset.mem_sdiff
+    have hinner : (Sum.inl a : A.V ⊕ Priv B) ∈ c.innerGlued.map Function.Embedding.inl ↔
+        a ∈ c.glued ∧ a ∉ A.inputs ∧ Sum.inl a ∉ B.outputs.map c.trEmb :=
+      (Finset.mem_map' _).trans Finset.mem_filter
+    have hhid : (Sum.inl a : A.V ⊕ Priv B) ∈ A.hidden.map Function.Embedding.inl ↔
+        ¬(a ∈ A.inputs ∨ a ∈ A.outputs) :=
+      (Finset.mem_map' _).trans (by rw [hidden, Finset.mem_compl, Finset.mem_union])
+    rw [hidden, Finset.mem_compl]
+    change (Sum.inl a ∉ A.inputs.map Function.Embedding.inl ∪
+      ((A.outputs \ c.glued).map Function.Embedding.inl ∪ B.outputs.map c.trEmb)) ↔
+        Sum.inl a ∈ (c.innerGlued.map Function.Embedding.inl ∪
+          A.hidden.map Function.Embedding.inl) ∪ B.hidden.map c.trEmb
+    rw [Finset.mem_union, Finset.mem_union, Finset.mem_union, Finset.mem_union, hin, hout,
+      hinner, hhid]
+    simp only [hbh, or_false]
+    -- Propositional reasoning, spelled out: `tauto` would unfold the memberships of the
+    -- composite, whose definition is large.
+    by_cases hg : a ∈ c.glued
+    · have ho := glued_subset_outputs c hg
+      constructor
+      · intro h
+        exact Or.inl ⟨hg, fun hi => h (Or.inl hi), fun hbo => h (Or.inr (Or.inr hbo))⟩
+      · rintro (⟨-, hi, hbo⟩ | hn) (h | ⟨-, hng⟩ | h)
+        · exact hi h
+        · exact hng hg
+        · exact hbo h
+        · exact hn (Or.inl h)
+        · exact hng hg
+        · exact hn (Or.inr ho)
+    · have hb : Sum.inl a ∉ B.outputs.map c.trEmb :=
+        fun h => hg (mem_glued_of_inl_mem_map c a h)
+      constructor
+      · intro h
+        exact Or.inr fun h' => h'.elim (fun hi => h (Or.inl hi))
+          (fun ho => h (Or.inr (Or.inl ⟨ho, hg⟩)))
+      · rintro (⟨hg', -, -⟩ | hn) (h | ⟨ho, -⟩ | h)
+        · exact hg hg'
+        · exact hg hg'
+        · exact hg hg'
+        · exact hn (Or.inl h)
+        · exact hn (Or.inr ho)
+        · exact hb h
+  | inr b =>
+    rw [hidden, Finset.mem_compl]
+    change (Sum.inr b ∉ A.inputs.map Function.Embedding.inl ∪
+      ((A.outputs \ c.glued).map Function.Embedding.inl ∪ B.outputs.map c.trEmb)) ↔
+        Sum.inr b ∈ (c.innerGlued.map Function.Embedding.inl ∪
+          A.hidden.map Function.Embedding.inl) ∪ B.hidden.map c.trEmb
+    simp only [Finset.mem_union, inr_mem_map_trEmb (c := c)]
+    simp [hidden, b.property]
+
+/-- The inner glued variables are exactly the glued variables that the composite hides. -/
+theorem innerGlued_eq_filter_hidden :
+    c.innerGlued =
+      c.glued.filter fun a => (Sum.inl a : A.V ⊕ Priv B) ∈ (compose c).hidden := by
+  ext a
+  rw [Finset.mem_filter, hidden_compose_general c]
+  constructor
+  · intro h
+    exact ⟨innerGlued_subset_glued c h,
+      Finset.mem_union_left _ (Finset.mem_union_left _ (Finset.mem_map_of_mem _ h))⟩
+  · rintro ⟨hg, h⟩
+    rcases Finset.mem_union.1 h with h | h
+    · rcases Finset.mem_union.1 h with h | h
+      · exact (Finset.mem_map' _).1 h
+      · exfalso
+        have hah : a ∈ A.hidden := (Finset.mem_map' _).1 h
+        exact Finset.mem_compl.1 hah (Finset.mem_union_right _ (glued_subset_outputs c hg))
+    · exact absurd h (inl_notMem_map_of_disjoint c a B.hidden (hidden_disjoint_inputs B))
+
+/-- With disjoint input and output sets on both networks there is no pass-through, and every
+glued variable is inner. -/
+theorem innerGlued_eq_glued (hA : A.inputs ∩ A.outputs = ∅)
+    (hB : B.inputs ∩ B.outputs = ∅) : c.innerGlued = c.glued := by
+  refine Finset.filter_true_of_mem fun a ha => ⟨fun hi => ?_, fun hm => ?_⟩
+  · have := Finset.mem_inter.2 ⟨hi, glued_subset_outputs c ha⟩
+    rw [hA] at this
+    exact Finset.notMem_empty _ this
+  · obtain ⟨w, hwo, he⟩ := Finset.mem_map.1 hm
+    by_cases hw : w ∈ B.inputs
+    · have := Finset.mem_inter.2 ⟨hw, hwo⟩
+      rw [hB] at this
+      exact Finset.notMem_empty _ this
+    · rw [trEmb_apply, tr_of_notMem hw] at he
+      exact absurd he (by simp)
+
 /-- The hidden variables of a composite, with unglued outputs retained. Total matching is
 not required. -/
 theorem hidden_compose (hA : A.inputs ∩ A.outputs = ∅)
@@ -1982,62 +2115,27 @@ theorem hidden_compose (hA : A.inputs ∩ A.outputs = ∅)
     (compose c).hidden =
       (c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪
         B.hidden.map c.trEmb := by
-  have hAi : ∀ v ∈ A.outputs, v ∉ A.inputs := by
-    intro v ho hi
-    have := Finset.mem_inter.2 ⟨hi, ho⟩
-    rw [hA] at this
-    exact Finset.notMem_empty _ this
-  have hBi : ∀ v ∈ B.outputs, v ∉ B.inputs := by
-    intro v ho hi
-    have := Finset.mem_inter.2 ⟨hi, ho⟩
-    rw [hB] at this
-    exact Finset.notMem_empty _ this
-  have hn : ∀ a (S : Finset B.V), Disjoint S B.inputs →
-      Sum.inl a ∉ S.map c.trEmb := by
-    intro a S hs hm
-    obtain ⟨v, hv, he⟩ := Finset.mem_map.1 hm
-    have hvi : v ∉ B.inputs := fun hi => Finset.disjoint_left.1 hs hv hi
-    rw [trEmb_apply, tr_of_notMem hvi] at he
-    exact Sum.inr_ne_inl he
-  ext v
-  cases v with
-  | inl a =>
-    have hbo : Sum.inl a ∉ B.outputs.map c.trEmb :=
-      hn a B.outputs (Finset.disjoint_left.2 hBi)
-    have hbh : Sum.inl a ∉ B.hidden.map c.trEmb :=
-      hn a B.hidden (hidden_disjoint_inputs B)
-    simp only [hidden, compose, Finset.mem_compl, Finset.mem_union,
-      Finset.mem_map, Function.Embedding.inl_apply, Sum.inl.injEq, exists_eq_right,
-      Finset.mem_sdiff] at *
-    by_cases hg : a ∈ c.glued
-    · have ho := glued_subset_outputs c hg
-      simp_all
-    · simp_all
-  | inr b =>
-    rw [hidden, Finset.mem_compl]
-    change (Sum.inr b ∉ A.inputs.map Function.Embedding.inl ∪
-      ((A.outputs \ c.glued).map Function.Embedding.inl ∪ B.outputs.map c.trEmb)) ↔
-        Sum.inr b ∈ (c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl) ∪
-          B.hidden.map c.trEmb
-    simp only [Finset.mem_union, inr_mem_map_trEmb (c := c)]
-    simp [hidden, b.property]
+  rw [hidden_compose_general, innerGlued_eq_glued c hA hB]
 
-/-- **Proposition 3, including partial gluing.** Sum the product of the two own-variable
-open semantics over the glued interface. No stochastic or locality assumptions are needed. -/
-theorem osem_compose_glue (κA : A.Kernel R) (κB : B.Kernel R)
-    (hA : A.inputs ∩ A.outputs = ∅) (hB : B.inputs ∩ B.outputs = ∅)
+/-- **Proposition 3 with pass-through.** For arbitrary interfaces -- copied or passed-through
+variables on either side, partial gluing, no locality, normalisation or matching assumptions --
+the composite's open semantics is the product of the two own-variable open semantics summed
+over the inner glued variables only. A glued variable that stays on the composite's interface
+(an input of `A`, or passed by `B` to its outputs) keeps its visible value: it is never summed. -/
+theorem osem_compose_passthrough (κA : A.Kernel R) (κB : B.Kernel R)
     (x : (compose c).Assignment) :
     osem (compose c) (composeKernel c κA κB) x =
-      marg (c.glued.map Function.Embedding.inl)
+      marg (c.innerGlued.map Function.Embedding.inl)
         (fun y => osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := by
-  have hg : Disjoint (c.glued.map Function.Embedding.inl : Finset (composeNet c).V)
+  have hg : Disjoint (c.innerGlued.map Function.Embedding.inl : Finset (composeNet c).V)
       (A.hidden.map Function.Embedding.inl) := by
     rw [Finset.disjoint_left]
     intro v hv hh
     obtain ⟨a, ha, rfl⟩ := Finset.mem_map.1 hv
     have hah : a ∈ A.hidden := by simpa using hh
-    exact Finset.mem_compl.1 hah (Finset.mem_union_right _ (glued_subset_outputs c ha))
-  have hS : c.glued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl
+    exact Finset.mem_compl.1 hah (Finset.mem_union_right _
+      (glued_subset_outputs c (innerGlued_subset_glued c ha)))
+  have hS : c.innerGlued.map Function.Embedding.inl ∪ A.hidden.map Function.Embedding.inl
       ⊆ varsA c := by
     intro v hv
     rcases Finset.mem_union.1 hv with hv | hv <;>
@@ -2050,13 +2148,13 @@ theorem osem_compose_glue (κA : A.Kernel R) (κB : B.Kernel R)
     rw [trEmb_apply, tr_of_notMem hbi]
     exact inr_mem_varsB _
   unfold osem
-  rw [hidden_compose c hA hB, marg_joint_compose_split κA κB hS hT,
+  rw [hidden_compose_general c, marg_joint_compose_split κA κB hS hT,
     marg_union_disjoint hg]
   have heq : ∀ z, marg (B.hidden.map c.trEmb)
       (fun w => joint κB (restrictB c w)) z = marg B.hidden (joint κB) (restrictB c z) :=
     marg_restrictB c B.hidden (hidden_disjoint_inputs B) (joint κB)
   simp_rw [heq]
-  apply congrArg (fun F => marg (c.glued.map Function.Embedding.inl) F x)
+  apply congrArg (fun F => marg (c.innerGlued.map Function.Embedding.inl) F x)
   funext y
   calc
     _ = marg (A.hidden.map Function.Embedding.inl)
@@ -2068,6 +2166,18 @@ theorem osem_compose_glue (κA : A.Kernel R) (κB : B.Kernel R)
       dsimp only
       rw [restrictB_eq_of_mem_fibre_hidden c y z hz]
     _ = _ := by rw [marg_restrictA]
+
+/-- **Proposition 3, including partial gluing.** Sum the product of the two own-variable
+open semantics over the glued interface. No stochastic or locality assumptions are needed.
+Without pass-through every glued variable is inner, so this is `osem_compose_passthrough`. -/
+theorem osem_compose_glue (κA : A.Kernel R) (κB : B.Kernel R)
+    (hA : A.inputs ∩ A.outputs = ∅) (hB : B.inputs ∩ B.outputs = ∅)
+    (x : (compose c).Assignment) :
+    osem (compose c) (composeKernel c κA κB) x =
+      marg (c.glued.map Function.Embedding.inl)
+        (fun y => osem A κA (restrictA c y) * osem B κB (restrictB c y)) x := by
+  rw [← innerGlued_eq_glued c hA hB]
+  exact osem_compose_passthrough c κA κB x
 
 /-- The original Roadmap statement, with its original (now known to be stronger than
 necessary) premises retained. `osem_compose_glue` proves it without locality, normalisation,
@@ -2096,10 +2206,12 @@ import Mathlib.Data.Finset.Card
 
 **Boundary counterexamples and representation limits** (SPEC §13, §61 and §62.1).
 
-The own-semantics composition formula proved in `OpenSemantics.lean` intentionally excludes
-pass-through inputs/outputs. On the binary identity wire, the open semantics is one, while
-blindly summing its visible glued state gives two. This refutes the formula with those
-side conditions removed; it does not refute the original, correctly qualified Roadmap claim.
+The own-semantics formula `osem_compose_glue` sums over every glued variable, so it needs
+disjoint inputs/outputs on both networks. On the binary identity wire, the open semantics is
+one, while blindly summing its visible glued state gives two: `passthrough_formula_fails`
+refutes that formula with its side conditions removed. `osem_compose_passthrough` is the
+formula for arbitrary interfaces: it sums only the inner glued variables, and on the same
+wire it gives one (`passthrough_formula_holds_on_wire`).
 
 There is a separate structural limitation: with no mechanisms, the typed-interface rule
 forces every variable to be an input. Since outputs are a subset of the apex, their number
@@ -2171,6 +2283,17 @@ theorem passthrough_formula_fails :
         (fun y => osem binaryWire binaryWireKernel (Composable.restrictA binaryWireMatch y) *
           osem binaryWire binaryWireKernel (Composable.restrictB binaryWireMatch y))
         binaryWireAssignment = 2 := by
+  decide
+
+/-- The pass-through formula `osem_compose_passthrough` on the same wire. The glued variable is
+an input of `A` and passed straight to `B`'s outputs, so it stays on the composite's interface:
+it is not inner, nothing is summed, and the formula gives the true value one. -/
+theorem passthrough_formula_holds_on_wire :
+    binaryWireMatch.innerGlued = ∅ ∧
+      marg (binaryWireMatch.innerGlued.map Function.Embedding.inl)
+        (fun y => osem binaryWire binaryWireKernel (Composable.restrictA binaryWireMatch y) *
+          osem binaryWire binaryWireKernel (Composable.restrictB binaryWireMatch y))
+        binaryWireAssignment = 1 := by
   decide
 
 end BayesianNetworksProofs.OpenFinBayesNet
@@ -5055,7 +5178,8 @@ pass-through and coherent copy/discard, is now constructed separately in
 `CategoricalBayesianNetworks.jl/proofs/` (ADR 0010), together with its numerical semantics:
 a strong braided monoidal functor into FinStoch preserving copy and discard
 (`OpenNet.Interpretation.functor`), whose composition formula `Interpretation.kernel_comp`
-covers copied and pass-through outputs. What remains here is a pass-through `osem`
-composition formula for this project's own `OpenFinBayesNet` representation, whose
-`osem_compose_glue` still requires disjoint input/output sets. The category of stochastic kernels is a different result, provided by
+covers copied and pass-through outputs. This project's own `OpenFinBayesNet` now has its
+pass-through formula too: `osem_compose_passthrough` in `Finite/OpenSemantics.lean` sums only
+the glued variables the composite hides and needs no hypotheses; `osem_compose_glue` is its
+disjoint-interface special case. The category of stochastic kernels is a different result, provided by
 `FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean`.

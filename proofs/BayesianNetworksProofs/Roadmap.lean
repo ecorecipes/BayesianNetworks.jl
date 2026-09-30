@@ -22,8 +22,9 @@ pass-through and coherent copy/discard, is now constructed separately in
 `CategoricalBayesianNetworks.jl/proofs/` (ADR 0010), together with its numerical semantics:
 a strong braided monoidal functor into FinStoch preserving copy and discard
 (`OpenNet.Interpretation.functor`), whose composition formula `Interpretation.kernel_comp`
-covers copied and pass-through outputs. What remains here is a pass-through `osem`
-composition formula for this project's own `OpenFinBayesNet` representation, whose
-`osem_compose_glue` still requires disjoint input/output sets. The category of stochastic kernels is a different result, provided by
+covers copied and pass-through outputs. This project's own `OpenFinBayesNet` now has its
+pass-through formula too: `osem_compose_passthrough` in `Finite/OpenSemantics.lean` sums only
+the glued variables the composite hides and needs no hypotheses; `osem_compose_glue` is its
+disjoint-interface special case. The category of stochastic kernels is a different result, provided by
 `FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean`.
 -/

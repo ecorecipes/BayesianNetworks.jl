@@ -6,10 +6,12 @@ import Mathlib.Data.Finset.Card
 
 **Boundary counterexamples and representation limits** (SPEC §13, §61 and §62.1).
 
-The own-semantics composition formula proved in `OpenSemantics.lean` intentionally excludes
-pass-through inputs/outputs. On the binary identity wire, the open semantics is one, while
-blindly summing its visible glued state gives two. This refutes the formula with those
-side conditions removed; it does not refute the original, correctly qualified Roadmap claim.
+The own-semantics formula `osem_compose_glue` sums over every glued variable, so it needs
+disjoint inputs/outputs on both networks. On the binary identity wire, the open semantics is
+one, while blindly summing its visible glued state gives two: `passthrough_formula_fails`
+refutes that formula with its side conditions removed. `osem_compose_passthrough` is the
+formula for arbitrary interfaces: it sums only the inner glued variables, and on the same
+wire it gives one (`passthrough_formula_holds_on_wire`).
 
 There is a separate structural limitation: with no mechanisms, the typed-interface rule
 forces every variable to be an input. Since outputs are a subset of the apex, their number
@@ -81,6 +83,17 @@ theorem passthrough_formula_fails :
         (fun y => osem binaryWire binaryWireKernel (Composable.restrictA binaryWireMatch y) *
           osem binaryWire binaryWireKernel (Composable.restrictB binaryWireMatch y))
         binaryWireAssignment = 2 := by
+  decide
+
+/-- The pass-through formula `osem_compose_passthrough` on the same wire. The glued variable is
+an input of `A` and passed straight to `B`'s outputs, so it stays on the composite's interface:
+it is not inner, nothing is summed, and the formula gives the true value one. -/
+theorem passthrough_formula_holds_on_wire :
+    binaryWireMatch.innerGlued = ∅ ∧
+      marg (binaryWireMatch.innerGlued.map Function.Embedding.inl)
+        (fun y => osem binaryWire binaryWireKernel (Composable.restrictA binaryWireMatch y) *
+          osem binaryWire binaryWireKernel (Composable.restrictB binaryWireMatch y))
+        binaryWireAssignment = 1 := by
   decide
 
 end BayesianNetworksProofs.OpenFinBayesNet

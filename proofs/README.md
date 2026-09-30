@@ -73,10 +73,10 @@ The current default target also includes `Finite/Assignments.lean`, `Posterior.l
 | `Finite/Tensor.lean` | **Prop 2** `joint_tensor`: on `V₁ ⊕ V₂`, `M₁ ⊕ M₂` the joint of `tensorKernel κ₁ κ₂` is the product of the joints; `closed_tensor`, `normalised_tensor`, `local_tensor`, `TopoOrder.tensor`. |
 | `Finite/Open.lean` | **The open-network closure theorem** and **Prop 3**. `OpenFinBayesNet` = `FinBayesNet` + `inputs`/`outputs` + the typed-interface rule (`target_inj`, `input_exogenous`, `exogenous_input`, `topo`); `Composable A B` = an injection `ι` of `B`'s inputs into `A`'s outputs plus the matching of their state spaces; `compose` = the quotient-free pushout on `A.V ⊕ {v : B.V // v ∉ B.inputs}`. See below. |
 | `Finite/Probability.lean` | The above instantiated at `ℝ≥0`. |
-| `Finite/OpenSemantics.lean` | `marg_restrictA` / `marg_restrictB`, the hidden-variable identification, and **Prop 3 in own-variable form**: `osem_compose_glue` and the original `osem_compose`. Partial matching is allowed; locality and normalisation are unnecessary for the algebraic equality. |
+| `Finite/OpenSemantics.lean` | `marg_restrictA` / `marg_restrictB`, the hidden-variable identification, and **Prop 3 in own-variable form**: `osem_compose_passthrough` for arbitrary pass-through, `osem_compose_glue` for disjoint interfaces, and the original `osem_compose`. Partial matching is allowed; locality and normalisation are unnecessary for the algebraic equality. |
 | `Finite/OrderedParents.lean` | `ParentOrder` uses a bijection from contiguous positions to parents. Ordered CPTs and local kernels are equivalent (`local_iff_ordered`, both round trips); coordinated order/CPT-axis changes preserve kernels (`toKernel_reindex`); `sum_joint_ordered` transfers joint normalisation. |
 | `Finite/VariableElimination.lean` | Scoped factors, bucket multiplication/summation and mechanism compilation. `eliminateAll_joint` equals the full-enumeration marginal; `eliminateAll_order_independent` permits any duplicate-free order for the same variable set. |
-| `Finite/BoundaryCases.lean` | A binary pass-through wire refutes dropping the interface-disjointness assumptions. Mechanism-free subset feet have at most as many outputs as inputs, exposing the missing noninjective output legs for copying feet. |
+| `Finite/BoundaryCases.lean` | A binary pass-through wire refutes dropping the interface-disjointness assumptions of `osem_compose_glue`, and the pass-through formula gives the true value on the same wire. Mechanism-free subset feet have at most as many outputs as inputs, exposing the missing noninjective output legs for copying feet. |
 | `Markov/Basic.lean` | Generic Mathlib `MarkovCategory` / `CopyDiscardCategory` consequences. The concrete finite instance is now in `FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean`. |
 | `Roadmap.lean` | Remaining categorical/representation questions; no unproved declarations. |
 
@@ -232,8 +232,18 @@ the glued interface.
 This theorem requires disjoint inputs and outputs on each side, but **not** total matching,
 kernel locality, or normalisation. `osem_compose` retains the original Roadmap premises as
 a corollary (unused premise names have an underscore). `passthrough_formula_fails` verifies
-why disjointness cannot just be removed: a binary wire has semantics one, while blindly
-summing its retained interface gives two.
+why disjointness cannot just be removed from it: a binary wire has semantics one, while
+blindly summing its retained interface gives two.
+
+`osem_compose_passthrough` is the formula for arbitrary interfaces, with no hypotheses. A
+glued variable that is an input of `A`, or that `B` passes straight to its outputs, stays on
+the composite's interface; `hidden_compose_general` shows that the composite hides exactly
+the other glued variables (`innerGlued`) together with the two hidden sets, so only those are
+summed. With disjoint interfaces every glued variable is inner (`innerGlued_eq_glued`), which
+is how `osem_compose_glue` and `hidden_compose` now follow. On the binary wire nothing is
+inner and the formula gives one (`passthrough_formula_holds_on_wire`). Two-sided partial
+gluing, leaving an input of `B` unmatched, is outside this representation, whose match
+consumes every input of `B`.
 
 ### General category and proof ownership (ADRs 0009 and 0010)
 

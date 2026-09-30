@@ -222,9 +222,11 @@ rewording of the README, the docs and the vignettes:
   `packagesDir` is not worth splitting for that alone.
 - Proposition 3 has both the split form `marg_joint_compose_split` and the own-variable
   `osem_compose` in `Finite/OpenSemantics.lean`. The stronger `osem_compose_glue` needs no
-  locality, normalisation or match surjectivity, but retains disjoint input/output sets.
-  Its match consumes every B input and may leave unused A outputs; it does not cover
-  arbitrary two-sided partial gluing or pass-through interfaces.
+  locality, normalisation or match surjectivity, but retains disjoint input/output sets;
+  `osem_compose_passthrough` drops those too and covers pass-through on either side, summing
+  only the glued variables the composite hides (`innerGlued`). The match consumes every B
+  input and may leave unused A outputs, so two-sided partial gluing is outside this
+  representation.
 - `Finite/VariableElimination.lean` proves a scoped finite-function bucket algorithm,
   compilation from local mechanisms and elimination-order independence.
   `Assignments.lean` / `Posterior.lean` prove clamping versus indicator conditioning,

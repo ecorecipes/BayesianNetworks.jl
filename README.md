@@ -120,9 +120,13 @@ Reporting:
   `sum_joint_compose_eq_one` come with it. The own-variable statement `osem_compose` is
   now proved in `Finite/OpenSemantics.lean`, with its original hypotheses. The stronger
   `osem_compose_glue` drops locality, normalisation and match surjectivity, but still
-  requires disjoint input/output sets on both networks. Every B input is matched into
-  A's outputs; unused A outputs are retained. General pass-through composition and
-  arbitrary two-sided partial gluing are not covered by that formula.
+  requires disjoint input/output sets on both networks. `osem_compose_passthrough` removes
+  that last condition: for arbitrary pass-through on either side, with no hypotheses at all,
+  the composite semantics is the product of the two own open semantics summed over the
+  glued variables the composite hides, while a glued variable that stays on the interface
+  keeps its value. Every B input is matched into A's outputs, and unused A outputs are
+  retained; two-sided partial gluing, leaving a B input unmatched, is outside this
+  representation.
 - `Finite/OrderedParents.lean` proves an exact positional-CPT/local-kernel equivalence
   and coherent parent-axis reindexing for a supplied duplicate-free parent ordering.
   `Finite/VariableElimination.lean` implements scoped finite-function bucket elimination

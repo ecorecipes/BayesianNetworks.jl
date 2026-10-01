@@ -14,6 +14,10 @@ assert_no_sorry BayesianNetworksProofs.FinBayesNet.d_separation_sound
 assert_no_sorry BayesianNetworksProofs.Numerical.kernel_query_posterior_error
 assert_no_sorry BayesianNetworksProofs.Binary64.nearestBinary64_roundsTo
 assert_no_sorry BayesianNetworksProofs.ErrorBounds.ve_posterior_forward_error
+assert_no_sorry BayesianNetworksProofs.Raw.decodeTables_eq_ok
+assert_no_sorry BayesianNetworksProofs.Raw.decodeTables_encodeTables
+assert_no_sorry BayesianNetworksProofs.Raw.decodeChecked_isSome_iff
+assert_no_sorry BayesianNetworksProofs.Raw.decodeChecked_encode
 
 -- Concrete data, references, repeated slots and exact conditioning.
 #print axioms BayesianNetworksProofs.Raw.decodeId_none_iff
@@ -34,6 +38,42 @@ assert_no_sorry BayesianNetworksProofs.ErrorBounds.ve_posterior_forward_error
 #print axioms BayesianNetworksProofs.Raw.Network.realKernel_local
 #print axioms BayesianNetworksProofs.Raw.Network.realKernel_nonnegative
 #print axioms BayesianNetworksProofs.Raw.Network.realKernel_normalized
+
+-- The ACSets JSON decoder (Finite/JsonRecords.lean).
+#print axioms BayesianNetworksProofs.Raw.decodeId_eq_some
+#print axioms BayesianNetworksProofs.Raw.decodeRef_eq_ok
+#print axioms BayesianNetworksProofs.Raw.decodeFn_eq_ok
+#print axioms BayesianNetworksProofs.Raw.decodeTable_eq_ok
+#print axioms BayesianNetworksProofs.Raw.decodeBody_eq_ok
+#print axioms BayesianNetworksProofs.Raw.decodeTables_eq_ok
+#print axioms BayesianNetworksProofs.Raw.decodeTables_encodeTables
+#print axioms BayesianNetworksProofs.Raw.BodyMatches.shape
+#print axioms BayesianNetworksProofs.Raw.decodeTables_error_of_envelope
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_missing_table
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_bad_table
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_size
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_bad_row
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_bad_column
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_missing_column
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_hom_out_of_range
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_not_integer
+#print axioms BayesianNetworksProofs.Raw.decodeBody_error_of_not_string
+#print axioms BayesianNetworksProofs.Raw.Tables.computeRank_sound
+#print axioms BayesianNetworksProofs.Raw.Tables.computeRank_complete
+#print axioms BayesianNetworksProofs.Raw.Tables.valid_iff_exists
+#print axioms BayesianNetworksProofs.Raw.Network.valid_iff_tables
+#print axioms BayesianNetworksProofs.Raw.Network.compile_eq_of_tables_eq
+#print axioms BayesianNetworksProofs.Raw.decode_eq_ok
+#print axioms BayesianNetworksProofs.Raw.decode_encode_of_rank
+#print axioms BayesianNetworksProofs.Raw.decode_encode
+#print axioms BayesianNetworksProofs.Raw.decodeChecked_sound
+#print axioms BayesianNetworksProofs.Raw.decodeChecked_isSome_iff
+#print axioms BayesianNetworksProofs.Raw.decodeChecked_encode
+#print axioms BayesianNetworksProofs.Raw.Network.labelAt_eq
+#print axioms BayesianNetworksProofs.Raw.Network.slotAt_eq
+#print axioms BayesianNetworksProofs.Raw.decodeChecked_stateLabel
+#print axioms BayesianNetworksProofs.Raw.decodeChecked_slotVariable
+#print axioms BayesianNetworksProofs.Raw.decodeChecked_compile
 #print axioms BayesianNetworksProofs.FinBayesNet.sum_partial_eq_marg
 #print axioms BayesianNetworksProofs.FinBayesNet.marg_indicator_eq_clamp
 #print axioms BayesianNetworksProofs.FinBayesNet.sum_conditioned_eq_indicator

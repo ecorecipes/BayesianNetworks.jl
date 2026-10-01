@@ -28,6 +28,12 @@ name = "BayesianNetworksProofs"
 name = "emit_schema"
 root = "Main"
 
+# `lake exe check_records FILE.json`: decode a `write_json_bayesnet` document with the proved
+# decoder (`Finite/JsonRecords.lean`) and print a canonical summary (scripts/check_records.jl).
+[[lean_exe]]
+name = "check_records"
+root = "CheckRecords"
+
 [[lean_lib]]
 name = "Shadows"
 srcDir = "."

@@ -39,7 +39,7 @@ MD_FILES = \
     Finite/OrderedParents.md Finite/VariableElimination.md \
     Finite/Intervention.md Finite/Tensor.md Finite/Open.md Finite/OpenSemantics.md \
     Finite/BoundaryCases.md Markov/Basic.md Finite/Probability.md \
-    Finite/Assignments.md Finite/Posterior.md Finite/RawRecords.md Finite/ReferenceTables.md \
+    Finite/Assignments.md Finite/Posterior.md Finite/RawRecords.md Finite/JsonRecords.md Finite/ReferenceTables.md \
     Finite/FactorMarginal.md Finite/JunctionTree.md Finite/ConditionalIndependence.md \
     Finite/DSeparation.md Finite/NumericalContracts.md Finite/RefinementExamples.md \
     Numeric/Binary64.md Numeric/ErrorBounds.md Roadmap.md

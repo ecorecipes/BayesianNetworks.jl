@@ -220,7 +220,14 @@ rewording of the README, the docs and the vignettes:
   nonnegative rational entries and exact normalization separately. The literal
   certificate consumer uses `decide +kernel`, not native-decision axioms.
   `proof_certificate` is the Julia producer; the full language/compiler/JSON/array
-  correspondence is still not a theorem.
+  correspondence is still not a theorem. `Finite/JsonRecords.lean` proves the one JSON piece:
+  decoding a parsed `Lean.Json` tree in `write_json_bayesnet`'s ACSets layout into those rows
+  is faithful (`decodeTables_eq_ok`), inverts its encoder (`decodeTables_encodeTables`), fails
+  on missing tables or columns, out-of-range hom IDs and wrong JSON types, and with the
+  computed causal rank succeeds exactly on valid documents (`decodeChecked_isSome_iff`).
+  `Lean.Json.parse` and Julia's JSON3/ACSets writer stay trusted. `lake exe check_records`
+  and `proofs/scripts/check_records.jl` cross-check it against Julia; keep the decoder's
+  layout (`bnColumns`, `decodeBody`) in step with `src/serialization.jl` and ACSets.
 - The Lean project has not moved, although `Finite/Open.lean` is about the layer that now
   lives in `CategoricalBayesianNetworks.jl`: it also emits the `SchBayesNet` schema JSON that
   this package's `test_serialization.jl` compares against, and a Lake project with a shared

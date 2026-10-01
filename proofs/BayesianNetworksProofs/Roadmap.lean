@@ -13,9 +13,18 @@ identity.
 Concrete finite records/references and repeated slots, genuine conditioned distributions,
 the actual Shafer-Shenoy collect/distribute computation, moralized-ancestral d-separation
 soundness, and conditional numerical error contracts now have checked developments.
-The remaining boundary is implementation translation: Julia/JSON decoding and reference
-binding, concrete CliqueTrees/Bayes-ball code, ordered-array layout and IEEE arithmetic
-adapters are not established merely by those finite-model theorems. Of the IEEE arithmetic,
+The remaining boundary is implementation translation. Of the JSON decoding, one piece is
+covered: `Finite/JsonRecords.lean` decodes a parsed `Lean.Json` tree in the ACSets layout of
+`write_json_bayesnet` into the raw rows, and proves the decoder faithful (`decodeTables_eq_ok`:
+it succeeds exactly when every table, row and column holds the decoded values, hom columns as
+one-based IDs), a right inverse of its encoder (`decodeTables_encodeTables`), failing on a
+missing table or column, a hom ID out of range or a value of the wrong JSON type, and, with the
+computed causal rank and `Network.check`, succeeding exactly on valid documents
+(`decodeChecked_isSome_iff`). Parsing the text (`Lean.Json.parse`) and Julia's JSON3/ACSets
+writer are trusted, not proved. Reference binding (the `"semantics"` kernels of
+`write_json_model` against the `KernelRef`s), concrete CliqueTrees/Bayes-ball code,
+ordered-array layout and IEEE arithmetic adapters are not established merely by those
+finite-model theorems. Of the IEEE arithmetic,
 one piece is covered: `Numeric/Binary64.lean` proves that the transcription of
 `_nearest_binary64`, the single rounding the exact fallbacks of ADR 0016 apply, returns the
 binary64 round-to-nearest-ties-to-even of every rational, overflow and signed zero included.

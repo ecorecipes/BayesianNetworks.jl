@@ -15,6 +15,7 @@ import BayesianNetworksProofs.Finite.Probability
 import BayesianNetworksProofs.Finite.Assignments
 import BayesianNetworksProofs.Finite.Posterior
 import BayesianNetworksProofs.Finite.RawRecords
+import BayesianNetworksProofs.Finite.JsonRecords
 import BayesianNetworksProofs.Finite.ReferenceTables
 import BayesianNetworksProofs.Finite.FactorMarginal
 import BayesianNetworksProofs.Finite.JunctionTree

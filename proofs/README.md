@@ -11,6 +11,7 @@ make audit                 # fail-closed #print-axioms allowlist verification
 lake exe emit_schema        # `make emit-schema`: regenerate schemas/*.schema.json
 lake exe emit_schema --check  # `make check-schema`: exit 1 if the JSON is stale
 lake build BayesianNetworksProofs.Roadmap  # `make roadmap`: remaining-work module, no sorry
+lake exe check_records FILE.json  # decode a write_json_bayesnet file with the proved decoder
 ```
 
 The dependency checkout is shared with the other ecosystem `proofs/` projects through
@@ -57,7 +58,7 @@ Module order (`MD_FILES` in the `Makefile`, the import order of `BayesianNetwork
 15. `Roadmap.lean` — remaining categorical questions; no unproved declarations
 
 The current default target also includes `Finite/Assignments.lean`, `Posterior.lean`,
-`RawRecords.lean`, `ReferenceTables.lean`, `FactorMarginal.lean`, `JunctionTree.lean`,
+`RawRecords.lean`, `JsonRecords.lean`, `ReferenceTables.lean`, `FactorMarginal.lean`, `JunctionTree.lean`,
 `ConditionalIndependence.lean`, `DSeparation.lean`, `NumericalContracts.lean`,
 `RefinementExamples.lean`, `Numeric/Binary64.lean` and `Numeric/ErrorBounds.lean`. Their exact
 placement in the generated
@@ -99,6 +100,26 @@ rejects unexpected output or warnings. It does not merely print an audit to the 
   structural check proves valid state/input positions, state-label uniqueness, closedness and
   causal ordering. Total positional coverage is **derived** from bounded unique positions.
   Repeated input variables are permitted and read diagonally.
+* `JsonRecords.lean` decodes a parsed `Lean.Json` tree in the ACSets JSON layout that
+  `write_json_bayesnet` writes (the `"bayesnet-acset"` envelope, the tables `Variable`, `State`,
+  `Mechanism`, `Input` as arrays of row objects with a one-based `_id`, one-based hom IDs and
+  positions, `KernelRef` objects with a `"type"` discriminator, and the empty `Label`,
+  `Position`, `Ref` tables) into the rows of `RawRecords.lean`. `decodeTables_eq_ok` proves the
+  decoder succeeds with rows `t` exactly when every table has `t`'s row count and every column
+  of every row holds `t`'s value (hom columns through `decodeId`, positions plus one), and
+  `decodeTables_encodeTables` that its encoder is a right inverse. The failure lemmas
+  (`decodeBody_error_of_missing_table`, `…_missing_column`, `…_hom_out_of_range`,
+  `…_not_integer`, `…_not_string`, `…_bad_row`, `…_bad_column`) show that no row is ever
+  defaulted. The JSON stores no rank, so `Tables.computeRank` places the variables greedily;
+  it succeeds exactly when some causal rank exists (`computeRank_sound`,
+  `computeRank_complete`). `decodeChecked` adds `Network.check`; `decodeChecked_isSome_iff`
+  proves it succeeds exactly on documents whose rows decode and are valid, and
+  `decodeChecked_encode` that every valid network comes back with its rows and its compiled
+  `FinBayesNet`. `decodeChecked_stateLabel` and `decodeChecked_slotVariable` tie the compiled
+  state labels and parent slots to the document's `State` and `Input` rows. `lake exe
+  check_records FILE.json` prints the summary these theorems describe, and
+  `scripts/check_records.jl` compares it with Julia's accessors. `Lean.Json.parse` and Julia's
+  JSON3/ACSets writer are trusted, not proved: the theorems start from a parsed `Json` tree.
 * `ReferenceTables.lean` resolves finite named/policy bindings and point-mass labels. Boolean
   readiness/normalization gates check rational columns, coordinate coverage, dimensions and
   state-position label signatures. Their success implies local normalized compiled kernels,

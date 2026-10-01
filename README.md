@@ -138,6 +138,16 @@ Reporting:
   Repeated input slots compile diagonally; complete raw CPT columns, ordered labels,
   nonnegative rational weights and exact normalization are checked separately.
   `proof_certificate(m)` supplies that data interface without changing bound numbers.
+- `Finite/JsonRecords.lean` decodes the ACSets JSON of `write_json_bayesnet`, from a parsed
+  `Lean.Json` tree, into those records. `decodeTables_eq_ok` proves that the decoder succeeds
+  with rows `t` exactly when every table of the document has `t`'s row count and every column
+  of every row holds `t`'s value, hom columns as one-based part IDs and positions one-based, and
+  `decodeTables_encodeTables` that decoding the encoded rows gives them back. A missing table
+  or column, a hom ID out of range or a value of the wrong JSON type is an error, never a
+  defaulted row. With the computed causal rank and `Network.check`, `decodeChecked` succeeds
+  exactly on documents whose rows decode and are valid. `Lean.Json.parse` and Julia's
+  JSON3/ACSets writer are trusted, not proved; `lake exe check_records` and
+  `proofs/scripts/check_records.jl` cross-check the decoded summary against Julia.
 - `Finite/Assignments.lean` and `Finite/Posterior.lean` prove explicit
   clamping/dropping of evidence equivalent to indicator-factor elimination, and VE
   numerator/normalized-posterior correctness. Distributions live on retained
@@ -197,8 +207,9 @@ Reporting:
 - These are exact finite-model/data results, not verification of Julia execution.
   In particular, the new raw-record compiler feeds the existing `FinBayesNet`
   reduct, whose parent sets erase slot multiplicity only after diagonal evaluation.
-  Full ACSet/JSON/array translation, CliqueTrees construction and IEEE arithmetic
-  remain separate. Of the IEEE arithmetic, the algorithm of the one rounding the exact
+  Full ACSet/array translation, reference binding, CliqueTrees construction and IEEE
+  arithmetic remain separate; of the JSON, only the decoding of a parsed tree into records is
+  proved (`Finite/JsonRecords.lean`), not the parsing of the text or Julia's writer. Of the IEEE arithmetic, the algorithm of the one rounding the exact
   fallbacks apply, `_nearest_binary64` (`Numeric/Binary64.lean`), is proved correct, and the
   ordinary paths have forward error bounds under the standard rounding model
   (`Numeric/ErrorBounds.lean`), with correct rounding of Julia's operations assumed. Formal forest

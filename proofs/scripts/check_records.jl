@@ -38,7 +38,8 @@
 # (`export_dve_certificate`, binary64 mode, and rational mode with companions recovered from the
 # binary64 certificate) and runs `lake exe check_certificate` (ID proofs project) on the diagram
 # and the certificate: a certificate Julia exports must match (`certificateMatches`), and the
-# exact applicability verdicts are recorded. Mutated certificates (swapped labels, a wrong axis, a
+# exact applicability verdicts are recorded, with the printed approximate-optimality numbers
+# (`certificateEpsilon`, the chance count, `certUmax` and the gap `certificateBound`). Mutated certificates (swapped labels, a wrong axis, a
 # repeated variable in the topological order, a missing field and others) must be rejected; Julia
 # has no certificate reader, so there is no Julia verdict for them.
 #
@@ -501,7 +502,10 @@ function run_cert(diagram, cert)
     fails = [l for l in lines if endswith(l, ": FAIL") || startswith(l, "certificate: error") ||
                                  startswith(l, "error")]
     return (status=p.exitcode, matches=field("matches: "), exact=field("exactly normalised: "),
-            nonneg=field("nonnegative: "), fails=fails, lines=lines)
+            nonneg=field("nonnegative: "), epsilon=field("normalisation error epsilon: "),
+            nchance=field("chance variables n: "), umax=field("utility bound Umax: "),
+            gap=field("optimality gap 2e: "),
+            approx=field("theorem certificate_approx_optimal: "), fails=fails, lines=lines)
 end
 
 # Exact companions recovered from a binary64 certificate: the simplest rational that rounds to
@@ -533,6 +537,9 @@ function cert_case(name, diagram, mode, export_cert)
     push!(CERTS, (name=name, mode=mode, ok=ok, exact=r.exact, nonneg=r.nonneg, fails=r.fails))
     println(rpad(ok ? "PASS" : "FAIL", 6), rpad("$name [$mode]", 60), "| matches $(r.matches),",
             " nonnegative $(r.nonneg), exactly normalised $(r.exact)")
+    # Printed only: the approximate-optimality bound (`certificate_approx_optimal`).
+    println("      ", rpad("", 60), "| epsilon $(r.epsilon), n $(r.nchance), Umax $(r.umax),",
+            " gap 2e $(r.gap), approx $(r.approx)")
     for f in r.fails
         println("        ", f)
     end

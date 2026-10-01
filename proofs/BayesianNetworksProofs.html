@@ -193,6 +193,46 @@ error contracts</a></li>
 <li><a href="#nonvacuity-and-boundary-checks"
 id="toc-nonvacuity-and-boundary-checks">Nonvacuity and boundary
 checks</a></li>
+<li><a
+href="#correct-rounding-to-binary64-_nearest_binary64-_rational_exponent-and-_dyadic"
+id="toc-correct-rounding-to-binary64-_nearest_binary64-_rational_exponent-and-_dyadic">Correct
+rounding to binary64: <code>_nearest_binary64</code>,
+<code>_rational_exponent</code> and <code>_dyadic</code></a>
+<ul>
+<li><a href="#binary64-words" id="toc-binary64-words">Binary64
+words</a></li>
+<li><a href="#the-specification" id="toc-the-specification">The
+specification</a></li>
+<li><a href="#the-transcription-of-srcexact_rounding.jl"
+id="toc-the-transcription-of-srcexact_rounding.jl">The transcription of
+<code>src/exact_rounding.jl</code></a></li>
+<li><a href="#rational_exponent-is-the-binary-logarithm"
+id="toc-rational_exponent-is-the-binary-logarithm"><code>_rational_exponent</code>
+is the binary logarithm</a></li>
+<li><a href="#rounding-the-scaled-quotient-to-an-integer"
+id="toc-rounding-the-scaled-quotient-to-an-integer">Rounding the scaled
+quotient to an integer</a></li>
+<li><a href="#nearest_binary64-in-pieces"
+id="toc-nearest_binary64-in-pieces"><code>_nearest_binary64</code> in
+pieces</a></li>
+<li><a href="#fields-of-assembled-words"
+id="toc-fields-of-assembled-words">Fields of assembled words</a></li>
+<li><a href="#values" id="toc-values">Values</a></li>
+<li><a href="#the-word-construction" id="toc-the-word-construction">The
+word construction</a></li>
+<li><a href="#nearest-on-the-grid-2-s-ℤ-and-below-it"
+id="toc-nearest-on-the-grid-2-s-ℤ-and-below-it">Nearest on the grid
+<code>2 ^ s ℤ</code>, and below it</a></li>
+<li><a href="#the-magnitude-word" id="toc-the-magnitude-word">The
+magnitude word</a></li>
+<li><a href="#the-sign" id="toc-the-sign">The sign</a></li>
+<li><a href="#correct-rounding" id="toc-correct-rounding">Correct
+rounding</a></li>
+<li><a href="#base.decompose-and-_dyadic"
+id="toc-base.decompose-and-_dyadic"><code>Base.decompose</code> and
+<code>_dyadic</code></a></li>
+<li><a href="#round-trip" id="toc-round-trip">Round trip</a></li>
+</ul></li>
 <li><a href="#roadmap" id="toc-roadmap">Roadmap</a></li>
 </ul>
 </nav>
@@ -5400,11 +5440,1068 @@ class="sourceCode lean"><code class="sourceCode lean"><span id="cb56-1"><a href=
 <span id="cb56-225"><a href="#cb56-225" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb56-226"><a href="#cb56-226" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb56-227"><a href="#cb56-227" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.RefinementExamples</span></code></pre></div>
+<!-- BayesianNetworksProofs/Numeric/Binary64.lean -->
+<h1
+id="correct-rounding-to-binary64-_nearest_binary64-_rational_exponent-and-_dyadic">Correct
+rounding to binary64: <code>_nearest_binary64</code>,
+<code>_rational_exponent</code> and <code>_dyadic</code></h1>
+<div class="sourceCode" id="cb57"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Data.Int.Log</span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Data.Rat.Floor</span>
+<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Data.Nat.Log</span>
+<span id="cb57-4"><a href="#cb57-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Algebra.Order.Field.Power</span>
+<span id="cb57-5"><a href="#cb57-5" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Tactic.Linarith</span>
+<span id="cb57-6"><a href="#cb57-6" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Tactic.NormNum</span>
+<span id="cb57-7"><a href="#cb57-7" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Tactic.Positivity</span>
+<span id="cb57-8"><a href="#cb57-8" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Tactic.FieldSimp</span>
+<span id="cb57-9"><a href="#cb57-9" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Tactic.Ring</span></code></pre></div>
+<p>ADR 0016 makes the exact evidence-mass fallback of
+<code>BayesianNetworks</code> and <code>BayesianNetworkInference</code>,
+and the exact decision elimination of <code>InfluenceDiagrams</code>,
+round an exact rational once with <code>_nearest_binary64</code> from
+<code>BayesianNetworks/src/exact_rounding.jl</code>. This module states
+IEEE 754 binary64 round-to-nearest-ties-to-even of a rational,
+transcribes the three Julia functions over <code>ℕ</code>,
+<code>ℤ</code> and <code>ℚ</code>, and proves the transcriptions
+correct.</p>
+<p><strong>The format.</strong> A word is a natural number below
+<code>2 ^ 64</code> read as a UInt64: sign bit 63, an 11-bit biased
+exponent <code>field</code> (bits 52 to 62) and a 52-bit
+<code>fraction</code>. A field of <code>0</code> is a zero or subnormal,
+<code>2 ^ -1022 * (fraction / 2 ^ 52)</code>; a field of <code>1</code>
+to <code>2046</code> is normal,
+<code>2 ^ (field - 1023) * (1 + fraction / 2 ^ 52)</code>; a field of
+<code>2047</code> is an infinity (fraction <code>0</code>) or a NaN.
+<code>decode</code> maps a word to that extended value, keeping the sign
+of a zero.</p>
+<p><strong>The specification</strong> (<code>RoundsTo q w</code>, IEEE
+754-2019 §4.3.1 and §7.4). A rational of magnitude at least
+<code>2 ^ 1024 - 2 ^ 970</code>
+(<code>b ^ emax * (b - b ^ (1 - p) / 2)</code>, the midpoint above the
+largest finite value) rounds to the infinity of its sign. Any other
+rational rounds to a finite word whose value is no farther from it than
+the value of any finite word; when a finite word of a different value is
+equally near, the result’s significand is even; and the result has the
+sign of the rational, so a result of zero is <code>-0.0</code> for a
+negative rational and <code>+0.0</code> otherwise.</p>
+<p><strong>The transcription.</strong> <code>nearestBinary64</code>
+follows <code>_nearest_binary64</code> line by line with the same
+branches and constants (<code>1023</code>, <code>-1075</code>,
+<code>52</code>, <code>-1074</code>, <code>-1022</code>,
+<code>0x8000000000000000</code>, <code>0x7ff0000000000000</code>).
+Julia’s <code>Rational{BigInt}</code> is normalized with a positive
+denominator, as <code>ℚ</code> is, so <code>numerator</code> and
+<code>denominator</code> are <code>Rat.num</code> and
+<code>Rat.den</code>. <code>BigInt</code> shifts are
+<code>&lt;&lt;&lt;</code> on <code>ℕ</code> (multiplication by a power
+of two), <code>divrem</code> of nonnegative integers is <code>/</code>
+and <code>%</code>, <code>isodd</code> is <code>% 2 = 1</code>,
+<code>ndigits(n; base = 2)</code> is <code>Nat.log 2 n + 1</code>
+(<code>1</code> at <code>0</code>, as in Julia), and the
+<code>UInt64</code> conversions, <code>&lt;&lt;</code> and
+<code>|</code> act on values the proofs show to be in range, so the word
+is a natural number below <code>2 ^ 64</code>.
+<code>reinterpret(Float64, word)</code> is <code>decode</code>.
+<code>decompose</code> follows <code>Base.decompose(::Float64)</code>
+(Julia 1.12, <code>base/float.jl</code>) on the word, and
+<code>dyadic</code> is <code>_dyadic</code>, with <code>none</code> for
+the <code>ArgumentError</code> it throws on a non-finite value.</p>
+<p><strong>What is proved.</strong></p>
+<ul>
+<li><code>rationalExponent_eq_log</code>: for <code>n, d &gt; 0</code>,
+<code>rationalExponent n d = ⌊log₂ (n / d)⌋</code>
+(<code>Int.log 2</code>), with the two-sided bound in
+<code>rationalExponent_spec</code>.</li>
+<li><code>nearestBinary64_roundsTo</code>: for every rational
+<code>q</code>, <code>RoundsTo q (nearestBinary64 q)</code>. This is the
+full range: zero (to <code>+0.0</code>), negative rationals, underflow
+to a signed zero, subnormals, the rounding of a subnormal up to the
+least normal, the carry into the exponent when the mantissa rounds up to
+<code>2 ^ 53</code>, and overflow exactly at
+<code>2 ^ 1024 - 2 ^ 970</code>.</li>
+<li><code>dyadic_value</code>: on a finite word, <code>dyadic</code>
+returns the integer <code>±significand</code> and exponent
+<code>max field 1 - 1075</code>, whose value <code>n * 2 ^ p</code> is
+the word’s value; <code>dyadic_none_iff</code>: it fails exactly on the
+infinities and NaNs. A negative zero gives <code>n = 0</code>.</li>
+<li><code>nearestBinary64_value</code>: rounding a finite word’s value
+returns that word, except that both zeros return <code>+0.0</code>,
+which the fallback’s bit-exact tests rely on.</li>
+</ul>
+<p><strong>What is not proved.</strong> These are theorems about the
+transcribed algorithm on mathematical integers and rationals. They do
+not cover Julia’s execution of the source, GMP’s <code>BigInt</code>
+arithmetic, <code>reinterpret</code>, or that the transcription matches
+the Julia text; that last step is a reading, recorded in
+<code>docs/LEAN-JULIA-DISCREPANCIES-2026-09-30.md</code>. The
+specification does not include uniqueness or monotonicity of
+rounding.</p>
+<div class="sourceCode" id="cb58"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> autoImplicit false</span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> BayesianNetworksProofs.Binary64</span></code></pre></div>
+<h2 id="binary64-words">Binary64 words</h2>
+<div class="sourceCode" id="cb59"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The sign bit (bit 63) of a word. -/</span></span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> signBit (w : ℕ) : Bool := <span class="cf">decide</span> (w / <span class="dv">2</span> ^ <span class="dv">63</span> % <span class="dv">2</span> = <span class="dv">1</span>)</span>
+<span id="cb59-3"><a href="#cb59-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-4"><a href="#cb59-4" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The 11-bit biased exponent field (bits 52 to 62). -/</span></span>
+<span id="cb59-5"><a href="#cb59-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> field (w : ℕ) : ℕ := w / <span class="dv">2</span> ^ <span class="dv">52</span> % <span class="dv">2</span> ^ <span class="dv">11</span></span>
+<span id="cb59-6"><a href="#cb59-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-7"><a href="#cb59-7" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The 52-bit fraction (trailing significand) field. -/</span></span>
+<span id="cb59-8"><a href="#cb59-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> fraction (w : ℕ) : ℕ := w % <span class="dv">2</span> ^ <span class="dv">52</span></span>
+<span id="cb59-9"><a href="#cb59-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-10"><a href="#cb59-10" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A 64-bit word encoding a finite number: neither an infinity nor a NaN. -/</span></span>
+<span id="cb59-11"><a href="#cb59-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> IsFinite (w : ℕ) : <span class="kw">Prop</span> := w &lt; <span class="dv">2</span> ^ <span class="dv">64</span> ∧ field w ≠ <span class="dv">2047</span></span>
+<span id="cb59-12"><a href="#cb59-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-13"><a href="#cb59-13" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The magnitude of a finite word: subnormal (and zero) for a field of `0`, normal otherwise. -/</span></span>
+<span id="cb59-14"><a href="#cb59-14" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> magnitude (w : ℕ) : ℚ :=</span>
+<span id="cb59-15"><a href="#cb59-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> field w = <span class="dv">0</span> <span class="kw">then</span> (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) * (fraction w / <span class="dv">2</span> ^ <span class="dv">52</span>)</span>
+<span id="cb59-16"><a href="#cb59-16" aria-hidden="true" tabindex="-1"></a>  <span class="kw">else</span> (<span class="dv">2</span> : ℚ) ^ ((field w : ℤ) - <span class="dv">1023</span>) * (<span class="dv">1</span> + fraction w / <span class="dv">2</span> ^ <span class="dv">52</span>)</span>
+<span id="cb59-17"><a href="#cb59-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-18"><a href="#cb59-18" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The signed value of a finite word; both zeros have value `0`. -/</span></span>
+<span id="cb59-19"><a href="#cb59-19" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> value (w : ℕ) : ℚ := <span class="kw">if</span> signBit w <span class="kw">then</span> -magnitude w <span class="kw">else</span> magnitude w</span>
+<span id="cb59-20"><a href="#cb59-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-21"><a href="#cb59-21" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The integral significand: the fraction, with the hidden bit `2 ^ 52` for a normal word.</span></span>
+<span id="cb59-22"><a href="#cb59-22" aria-hidden="true" tabindex="-1"></a><span class="do">Its parity is the parity of the significand&#39;s last digit, which ties to even compares. -/</span></span>
+<span id="cb59-23"><a href="#cb59-23" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> significand (w : ℕ) : ℕ := <span class="kw">if</span> field w = <span class="dv">0</span> <span class="kw">then</span> fraction w <span class="kw">else</span> <span class="dv">2</span> ^ <span class="dv">52</span> + fraction w</span>
+<span id="cb59-24"><a href="#cb59-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-25"><a href="#cb59-25" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A binary64 datum: a finite number with its sign (so `-0.0` is `finite true 0`), an</span></span>
+<span id="cb59-26"><a href="#cb59-26" aria-hidden="true" tabindex="-1"></a><span class="do">infinity, or a NaN. -/</span></span>
+<span id="cb59-27"><a href="#cb59-27" aria-hidden="true" tabindex="-1"></a><span class="kw">inductive</span> Extended <span class="kw">where</span></span>
+<span id="cb59-28"><a href="#cb59-28" aria-hidden="true" tabindex="-1"></a>  | finite (negative : Bool) (x : ℚ)</span>
+<span id="cb59-29"><a href="#cb59-29" aria-hidden="true" tabindex="-1"></a>  | infinity (negative : Bool)</span>
+<span id="cb59-30"><a href="#cb59-30" aria-hidden="true" tabindex="-1"></a>  | nan</span>
+<span id="cb59-31"><a href="#cb59-31" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> DecidableEq</span>
+<span id="cb59-32"><a href="#cb59-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-33"><a href="#cb59-33" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `reinterpret(Float64, w)`, as the datum it encodes. -/</span></span>
+<span id="cb59-34"><a href="#cb59-34" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> decode (w : ℕ) : Extended :=</span>
+<span id="cb59-35"><a href="#cb59-35" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> field w = <span class="dv">2047</span> <span class="kw">then</span> (<span class="kw">if</span> fraction w = <span class="dv">0</span> <span class="kw">then</span> .infinity (signBit w) <span class="kw">else</span> .nan)</span>
+<span id="cb59-36"><a href="#cb59-36" aria-hidden="true" tabindex="-1"></a>  <span class="kw">else</span> .finite (signBit w) (value w)</span></code></pre></div>
+<h2 id="the-specification">The specification</h2>
+<div class="sourceCode" id="cb60"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `2 ^ 1024 - 2 ^ 970`: the midpoint between the largest finite binary64 value</span></span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a><span class="do">`(2 ^ 53 - 1) * 2 ^ 971` and `2 ^ 1024`. A rational of at least this magnitude overflows. -/</span></span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> overflowThreshold : ℚ := <span class="dv">2</span> ^ <span class="dv">1024</span> - <span class="dv">2</span> ^ <span class="dv">970</span></span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `w` is the binary64 word that IEEE 754 round-to-nearest, ties-to-even, delivers for the</span></span>
+<span id="cb60-6"><a href="#cb60-6" aria-hidden="true" tabindex="-1"></a><span class="do">rational `q`: overflow to the infinity of `q`&#39;s sign at or beyond `overflowThreshold`;</span></span>
+<span id="cb60-7"><a href="#cb60-7" aria-hidden="true" tabindex="-1"></a><span class="do">otherwise a finite word with `q`&#39;s sign, at least as near `q` as every finite word, and with an</span></span>
+<span id="cb60-8"><a href="#cb60-8" aria-hidden="true" tabindex="-1"></a><span class="do">even significand when a finite word of a different value is equally near. -/</span></span>
+<span id="cb60-9"><a href="#cb60-9" aria-hidden="true" tabindex="-1"></a><span class="kw">structure</span> RoundsTo (q : ℚ) (w : ℕ) : <span class="kw">Prop</span> <span class="kw">where</span></span>
+<span id="cb60-10"><a href="#cb60-10" aria-hidden="true" tabindex="-1"></a>  word : w &lt; <span class="dv">2</span> ^ <span class="dv">64</span></span>
+<span id="cb60-11"><a href="#cb60-11" aria-hidden="true" tabindex="-1"></a>  overflow : overflowThreshold ≤ |q| → decode w = .infinity (<span class="cf">decide</span> (q &lt; <span class="dv">0</span>))</span>
+<span id="cb60-12"><a href="#cb60-12" aria-hidden="true" tabindex="-1"></a>  finite : |q| &lt; overflowThreshold → field w ≠ <span class="dv">2047</span></span>
+<span id="cb60-13"><a href="#cb60-13" aria-hidden="true" tabindex="-1"></a>  sign : |q| &lt; overflowThreshold → signBit w = <span class="cf">decide</span> (q &lt; <span class="dv">0</span>)</span>
+<span id="cb60-14"><a href="#cb60-14" aria-hidden="true" tabindex="-1"></a>  nearest : |q| &lt; overflowThreshold → ∀ w&#39;, IsFinite w&#39; → |value w - q| ≤ |value w&#39; - q|</span>
+<span id="cb60-15"><a href="#cb60-15" aria-hidden="true" tabindex="-1"></a>  tiesToEven : |q| &lt; overflowThreshold → ∀ w&#39;, IsFinite w&#39; →</span>
+<span id="cb60-16"><a href="#cb60-16" aria-hidden="true" tabindex="-1"></a>    |value w&#39; - q| = |value w - q| → value w&#39; ≠ value w → Even (significand w)</span></code></pre></div>
+<h2 id="the-transcription-of-srcexact_rounding.jl">The transcription of
+<code>src/exact_rounding.jl</code></h2>
+<div class="sourceCode" id="cb61"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Julia&#39;s `ndigits(n; base = 2)`: the number of binary digits of `n`, and `1` for `0`. -/</span></span>
+<span id="cb61-2"><a href="#cb61-2" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> ndigits2 (n : ℕ) : ℕ := Nat.log <span class="dv">2</span> n + <span class="dv">1</span></span>
+<span id="cb61-3"><a href="#cb61-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-4"><a href="#cb61-4" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_rational_exponent(n, d)`. -/</span></span>
+<span id="cb61-5"><a href="#cb61-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rationalExponent (n d : ℕ) : ℤ :=</span>
+<span id="cb61-6"><a href="#cb61-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> exponent : ℤ := (ndigits2 n : ℤ) - ndigits2 d</span>
+<span id="cb61-7"><a href="#cb61-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> below : Bool :=</span>
+<span id="cb61-8"><a href="#cb61-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> exponent ≥ <span class="dv">0</span> <span class="kw">then</span> <span class="cf">decide</span> (n &lt; d &lt;&lt;&lt; exponent.toNat)</span>
+<span id="cb61-9"><a href="#cb61-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">else</span> <span class="cf">decide</span> (n &lt;&lt;&lt; (-exponent).toNat &lt; d)</span>
+<span id="cb61-10"><a href="#cb61-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> below <span class="kw">then</span> exponent - <span class="dv">1</span> <span class="kw">else</span> exponent</span>
+<span id="cb61-11"><a href="#cb61-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-12"><a href="#cb61-12" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_nearest_binary64(value::Rational{BigInt})`, returning the word that Julia reinterprets</span></span>
+<span id="cb61-13"><a href="#cb61-13" aria-hidden="true" tabindex="-1"></a><span class="do">as a `Float64`. -/</span></span>
+<span id="cb61-14"><a href="#cb61-14" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> nearestBinary64 (value : ℚ) : ℕ :=</span>
+<span id="cb61-15"><a href="#cb61-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> value = <span class="dv">0</span> <span class="kw">then</span> <span class="dv">0</span> <span class="kw">else</span></span>
+<span id="cb61-16"><a href="#cb61-16" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> sign_bits : ℕ := <span class="kw">if</span> value &lt; <span class="dv">0</span> <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span></span>
+<span id="cb61-17"><a href="#cb61-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> n := value.num.natAbs</span>
+<span id="cb61-18"><a href="#cb61-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> d := value.den</span>
+<span id="cb61-19"><a href="#cb61-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> exponent := rationalExponent n d</span>
+<span id="cb61-20"><a href="#cb61-20" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> exponent &gt; <span class="dv">1023</span> <span class="kw">then</span> sign_bits ||| <span class="dv">0x7ff0000000000000</span> <span class="kw">else</span></span>
+<span id="cb61-21"><a href="#cb61-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> exponent &lt; -<span class="dv">1075</span> <span class="kw">then</span> sign_bits <span class="kw">else</span></span>
+<span id="cb61-22"><a href="#cb61-22" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> shift : ℤ := max (exponent - <span class="dv">52</span>) (-<span class="dv">1074</span>)</span>
+<span id="cb61-23"><a href="#cb61-23" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> numerator_ := <span class="kw">if</span> shift &lt; <span class="dv">0</span> <span class="kw">then</span> n &lt;&lt;&lt; (-shift).toNat <span class="kw">else</span> n</span>
+<span id="cb61-24"><a href="#cb61-24" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> denominator_ := <span class="kw">if</span> shift &gt; <span class="dv">0</span> <span class="kw">then</span> d &lt;&lt;&lt; shift.toNat <span class="kw">else</span> d</span>
+<span id="cb61-25"><a href="#cb61-25" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> mantissa := numerator_ / denominator_</span>
+<span id="cb61-26"><a href="#cb61-26" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> remainder := numerator_ % denominator_</span>
+<span id="cb61-27"><a href="#cb61-27" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> twice := <span class="dv">2</span> * remainder</span>
+<span id="cb61-28"><a href="#cb61-28" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> mantissa :=</span>
+<span id="cb61-29"><a href="#cb61-29" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> twice &gt; denominator_ ∨ (twice = denominator_ ∧ mantissa % <span class="dv">2</span> = <span class="dv">1</span>) <span class="kw">then</span> mantissa + <span class="dv">1</span></span>
+<span id="cb61-30"><a href="#cb61-30" aria-hidden="true" tabindex="-1"></a>    <span class="kw">else</span> mantissa</span>
+<span id="cb61-31"><a href="#cb61-31" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> hidden_bit := <span class="dv">1</span> &lt;&lt;&lt; <span class="dv">52</span></span>
+<span id="cb61-32"><a href="#cb61-32" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> word :=</span>
+<span id="cb61-33"><a href="#cb61-33" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> mantissa &lt; hidden_bit <span class="kw">then</span> mantissa</span>
+<span id="cb61-34"><a href="#cb61-34" aria-hidden="true" tabindex="-1"></a>    <span class="kw">else</span></span>
+<span id="cb61-35"><a href="#cb61-35" aria-hidden="true" tabindex="-1"></a>      <span class="kw">let</span> field := max exponent (-<span class="dv">1022</span>) + <span class="dv">1023</span></span>
+<span id="cb61-36"><a href="#cb61-36" aria-hidden="true" tabindex="-1"></a>      <span class="kw">let</span> (mantissa, field) :=</span>
+<span id="cb61-37"><a href="#cb61-37" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> mantissa = <span class="dv">2</span> * hidden_bit <span class="kw">then</span> (hidden_bit, field + <span class="dv">1</span>) <span class="kw">else</span> (mantissa, field)</span>
+<span id="cb61-38"><a href="#cb61-38" aria-hidden="true" tabindex="-1"></a>      (field.toNat &lt;&lt;&lt; <span class="dv">52</span>) ||| (mantissa - hidden_bit)</span>
+<span id="cb61-39"><a href="#cb61-39" aria-hidden="true" tabindex="-1"></a>  sign_bits ||| word</span>
+<span id="cb61-40"><a href="#cb61-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-41"><a href="#cb61-41" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `Base.decompose(x::Float64)` on the word of `x`: `(num, pow, den)` with `x = num * 2 ^ pow</span></span>
+<span id="cb61-42"><a href="#cb61-42" aria-hidden="true" tabindex="-1"></a><span class="do">/ den`, `(0, 0, 0)` for a NaN and `(±1, 0, 0)` for an infinity. -/</span></span>
+<span id="cb61-43"><a href="#cb61-43" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> decompose (w : ℕ) : ℤ × ℤ × ℤ :=</span>
+<span id="cb61-44"><a href="#cb61-44" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> field w = <span class="dv">2047</span> ∧ fraction w ≠ <span class="dv">0</span> <span class="kw">then</span> (<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>) <span class="kw">else</span></span>
+<span id="cb61-45"><a href="#cb61-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> field w = <span class="dv">2047</span> <span class="kw">then</span> ((<span class="kw">if</span> signBit w <span class="kw">then</span> -<span class="dv">1</span> <span class="kw">else</span> <span class="dv">1</span>), <span class="dv">0</span>, <span class="dv">0</span>) <span class="kw">else</span></span>
+<span id="cb61-46"><a href="#cb61-46" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> s := w &amp;&amp;&amp; <span class="dv">0x000fffffffffffff</span></span>
+<span id="cb61-47"><a href="#cb61-47" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> e := (w &amp;&amp;&amp; <span class="dv">0x7ff0000000000000</span>) &gt;&gt;&gt; <span class="dv">52</span></span>
+<span id="cb61-48"><a href="#cb61-48" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> s := s ||| ((<span class="kw">if</span> e ≠ <span class="dv">0</span> <span class="kw">then</span> <span class="dv">1</span> <span class="kw">else</span> <span class="dv">0</span>) &lt;&lt;&lt; <span class="dv">52</span>)</span>
+<span id="cb61-49"><a href="#cb61-49" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> d : ℤ := <span class="kw">if</span> signBit w <span class="kw">then</span> -<span class="dv">1</span> <span class="kw">else</span> <span class="dv">1</span></span>
+<span id="cb61-50"><a href="#cb61-50" aria-hidden="true" tabindex="-1"></a>  ((s : ℤ), (e : ℤ) - <span class="dv">1075</span> + (<span class="kw">if</span> e = <span class="dv">0</span> <span class="kw">then</span> <span class="dv">1</span> <span class="kw">else</span> <span class="dv">0</span>), d)</span>
+<span id="cb61-51"><a href="#cb61-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb61-52"><a href="#cb61-52" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_dyadic(x)`: `(BigInt(num) * sign(den), Int(pow))`, and `none` where Julia throws the</span></span>
+<span id="cb61-53"><a href="#cb61-53" aria-hidden="true" tabindex="-1"></a><span class="do">`ArgumentError` for a non-finite `x`. -/</span></span>
+<span id="cb61-54"><a href="#cb61-54" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> dyadic (w : ℕ) : Option (ℤ × ℤ) :=</span>
+<span id="cb61-55"><a href="#cb61-55" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> field w = <span class="dv">2047</span> <span class="kw">then</span> none</span>
+<span id="cb61-56"><a href="#cb61-56" aria-hidden="true" tabindex="-1"></a>  <span class="kw">else</span></span>
+<span id="cb61-57"><a href="#cb61-57" aria-hidden="true" tabindex="-1"></a>    <span class="kw">let</span> (num, pow, den) := decompose w</span>
+<span id="cb61-58"><a href="#cb61-58" aria-hidden="true" tabindex="-1"></a>    some (num * Int.sign den, pow)</span></code></pre></div>
+<h2
+id="rational_exponent-is-the-binary-logarithm"><code>_rational_exponent</code>
+is the binary logarithm</h2>
+<div class="sourceCode" id="cb62"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> rationalExponent_spec (n d : ℕ) (hn : <span class="dv">0</span> &lt; n) (hd : <span class="dv">0</span> &lt; d) :</span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a>    (<span class="dv">2</span> : ℚ) ^ rationalExponent n d ≤ (n : ℚ) / d ∧</span>
+<span id="cb62-3"><a href="#cb62-3" aria-hidden="true" tabindex="-1"></a>      (n : ℚ) / d &lt; (<span class="dv">2</span> : ℚ) ^ (rationalExponent n d + <span class="dv">1</span>) := <span class="kw">by</span></span>
+<span id="cb62-4"><a href="#cb62-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hn1 := Nat.pow_log_le_self <span class="dv">2</span> hn.ne&#39;</span>
+<span id="cb62-5"><a href="#cb62-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hn2 := Nat.lt_pow_succ_log_self (<span class="kw">by</span> <span class="cf">norm_num</span> : <span class="dv">1</span> &lt; <span class="dv">2</span>) n</span>
+<span id="cb62-6"><a href="#cb62-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hd1 := Nat.pow_log_le_self <span class="dv">2</span> hd.ne&#39;</span>
+<span id="cb62-7"><a href="#cb62-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hd2 := Nat.lt_pow_succ_log_self (<span class="kw">by</span> <span class="cf">norm_num</span> : <span class="dv">1</span> &lt; <span class="dv">2</span>) d</span>
+<span id="cb62-8"><a href="#cb62-8" aria-hidden="true" tabindex="-1"></a>  set a := Nat.log <span class="dv">2</span> n</span>
+<span id="cb62-9"><a href="#cb62-9" aria-hidden="true" tabindex="-1"></a>  set b := Nat.log <span class="dv">2</span> d</span>
+<span id="cb62-10"><a href="#cb62-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdq : (<span class="dv">0</span> : ℚ) &lt; d := <span class="kw">by</span> exact_mod_cast hd</span>
+<span id="cb62-11"><a href="#cb62-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hnq1 : (<span class="dv">2</span> : ℚ) ^ a ≤ n := <span class="kw">by</span> exact_mod_cast hn1</span>
+<span id="cb62-12"><a href="#cb62-12" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hnq2 : (n : ℚ) &lt; <span class="dv">2</span> ^ (a + <span class="dv">1</span>) := <span class="kw">by</span> exact_mod_cast hn2</span>
+<span id="cb62-13"><a href="#cb62-13" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdq1 : (<span class="dv">2</span> : ℚ) ^ b ≤ d := <span class="kw">by</span> exact_mod_cast hd1</span>
+<span id="cb62-14"><a href="#cb62-14" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdq2 : (d : ℚ) &lt; <span class="dv">2</span> ^ (b + <span class="dv">1</span>) := <span class="kw">by</span> exact_mod_cast hd2</span>
+<span id="cb62-15"><a href="#cb62-15" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- `below` is the comparison `n / d &lt; 2 ^ exponent`.</span></span>
+<span id="cb62-16"><a href="#cb62-16" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hbelow : ∀ E : ℤ, ((<span class="kw">if</span> E ≥ <span class="dv">0</span> <span class="kw">then</span> <span class="cf">decide</span> (n &lt; d &lt;&lt;&lt; E.toNat)</span>
+<span id="cb62-17"><a href="#cb62-17" aria-hidden="true" tabindex="-1"></a>      <span class="kw">else</span> <span class="cf">decide</span> (n &lt;&lt;&lt; (-E).toNat &lt; d)) = true) ↔ (n : ℚ) / d &lt; (<span class="dv">2</span> : ℚ) ^ E := <span class="kw">by</span></span>
+<span id="cb62-18"><a href="#cb62-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> E</span>
+<span id="cb62-19"><a href="#cb62-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [div_lt_iff₀ hdq]</span>
+<span id="cb62-20"><a href="#cb62-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">split_ifs</span> <span class="kw">with</span> h</span>
+<span id="cb62-21"><a href="#cb62-21" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> hk : (<span class="dv">2</span> : ℚ) ^ E.toNat = <span class="dv">2</span> ^ E := <span class="kw">by</span></span>
+<span id="cb62-22"><a href="#cb62-22" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← zpow_natCast, Int.toNat_of_nonneg h]</span>
+<span id="cb62-23"><a href="#cb62-23" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [decide_eq_true_iff, Nat.shiftLeft_eq, ← Nat.cast_lt (α := ℚ)]</span>
+<span id="cb62-24"><a href="#cb62-24" aria-hidden="true" tabindex="-1"></a>      <span class="cf">push_cast</span></span>
+<span id="cb62-25"><a href="#cb62-25" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hk, mul_comm]</span>
+<span id="cb62-26"><a href="#cb62-26" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> hk : (<span class="dv">2</span> : ℚ) ^ (-E).toNat = <span class="dv">2</span> ^ (-E) := <span class="kw">by</span></span>
+<span id="cb62-27"><a href="#cb62-27" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← zpow_natCast, Int.toNat_of_nonneg (<span class="kw">by</span> <span class="cf">omega</span>)]</span>
+<span id="cb62-28"><a href="#cb62-28" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [decide_eq_true_iff, Nat.shiftLeft_eq, ← Nat.cast_lt (α := ℚ)]</span>
+<span id="cb62-29"><a href="#cb62-29" aria-hidden="true" tabindex="-1"></a>      <span class="cf">push_cast</span></span>
+<span id="cb62-30"><a href="#cb62-30" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hk]</span>
+<span id="cb62-31"><a href="#cb62-31" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> h2 : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ (-E) := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb62-32"><a href="#cb62-32" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> h3 : (<span class="dv">2</span> : ℚ) ^ E * <span class="dv">2</span> ^ (-E) = <span class="dv">1</span> := <span class="kw">by</span></span>
+<span id="cb62-33"><a href="#cb62-33" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← zpow_add₀ two_ne_zero]; <span class="cf">simp</span></span>
+<span id="cb62-34"><a href="#cb62-34" aria-hidden="true" tabindex="-1"></a>      <span class="cf">constructor</span></span>
+<span id="cb62-35"><a href="#cb62-35" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">intro</span> hlt</span>
+<span id="cb62-36"><a href="#cb62-36" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> := mul_lt_mul_of_pos_right hlt (<span class="kw">show</span> (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ E <span class="kw">by</span> <span class="cf">positivity</span>)</span>
+<span id="cb62-37"><a href="#cb62-37" aria-hidden="true" tabindex="-1"></a>        <span class="kw">calc</span> (n : ℚ) = n * <span class="dv">2</span> ^ (-E) * <span class="dv">2</span> ^ E := <span class="kw">by</span></span>
+<span id="cb62-38"><a href="#cb62-38" aria-hidden="true" tabindex="-1"></a>                <span class="cf">rw</span> [mul_assoc, mul_comm (<span class="dv">2</span> ^ (-E) : ℚ), h3, mul_one]</span>
+<span id="cb62-39"><a href="#cb62-39" aria-hidden="true" tabindex="-1"></a>          _ &lt; d * <span class="dv">2</span> ^ E := this</span>
+<span id="cb62-40"><a href="#cb62-40" aria-hidden="true" tabindex="-1"></a>          _ = _ := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb62-41"><a href="#cb62-41" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">intro</span> hlt</span>
+<span id="cb62-42"><a href="#cb62-42" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> := mul_lt_mul_of_pos_right hlt h2</span>
+<span id="cb62-43"><a href="#cb62-43" aria-hidden="true" tabindex="-1"></a>        <span class="kw">calc</span> (n : ℚ) * <span class="dv">2</span> ^ (-E) &lt; <span class="dv">2</span> ^ E * d * <span class="dv">2</span> ^ (-E) := this</span>
+<span id="cb62-44"><a href="#cb62-44" aria-hidden="true" tabindex="-1"></a>          _ = d := <span class="kw">by</span> <span class="cf">rw</span> [mul_comm _ (d : ℚ), mul_assoc, h3, mul_one]</span>
+<span id="cb62-45"><a href="#cb62-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hlo : (<span class="dv">2</span> : ℚ) ^ ((a : ℤ) - b - <span class="dv">1</span>) ≤ (n : ℚ) / d := <span class="kw">by</span></span>
+<span id="cb62-46"><a href="#cb62-46" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [le_div_iff₀ hdq]</span>
+<span id="cb62-47"><a href="#cb62-47" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> (<span class="dv">2</span> : ℚ) ^ ((a : ℤ) - b - <span class="dv">1</span>) * d ≤ <span class="dv">2</span> ^ ((a : ℤ) - b - <span class="dv">1</span>) * <span class="dv">2</span> ^ ((b : ℤ) + <span class="dv">1</span>) := <span class="kw">by</span></span>
+<span id="cb62-48"><a href="#cb62-48" aria-hidden="true" tabindex="-1"></a>            gcongr; exact_mod_cast hdq2.le</span>
+<span id="cb62-49"><a href="#cb62-49" aria-hidden="true" tabindex="-1"></a>      _ = <span class="dv">2</span> ^ a := <span class="kw">by</span> <span class="cf">rw</span> [← zpow_add₀ two_ne_zero, ← zpow_natCast]; <span class="cf">congr</span> <span class="dv">1</span>; <span class="cf">ring</span></span>
+<span id="cb62-50"><a href="#cb62-50" aria-hidden="true" tabindex="-1"></a>      _ ≤ n := hnq1</span>
+<span id="cb62-51"><a href="#cb62-51" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hhi : (n : ℚ) / d &lt; (<span class="dv">2</span> : ℚ) ^ ((a : ℤ) - b + <span class="dv">1</span>) := <span class="kw">by</span></span>
+<span id="cb62-52"><a href="#cb62-52" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [div_lt_iff₀ hdq]</span>
+<span id="cb62-53"><a href="#cb62-53" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> (n : ℚ) &lt; <span class="dv">2</span> ^ (a + <span class="dv">1</span>) := hnq2</span>
+<span id="cb62-54"><a href="#cb62-54" aria-hidden="true" tabindex="-1"></a>      _ = <span class="dv">2</span> ^ ((a : ℤ) - b + <span class="dv">1</span>) * <span class="dv">2</span> ^ (b : ℤ) := <span class="kw">by</span></span>
+<span id="cb62-55"><a href="#cb62-55" aria-hidden="true" tabindex="-1"></a>            <span class="cf">rw</span> [← zpow_add₀ two_ne_zero, ← zpow_natCast]; <span class="cf">congr</span> <span class="dv">1</span>; <span class="cf">push_cast</span>; <span class="cf">ring</span></span>
+<span id="cb62-56"><a href="#cb62-56" aria-hidden="true" tabindex="-1"></a>      _ ≤ <span class="dv">2</span> ^ ((a : ℤ) - b + <span class="dv">1</span>) * d := <span class="kw">by</span></span>
+<span id="cb62-57"><a href="#cb62-57" aria-hidden="true" tabindex="-1"></a>            gcongr; <span class="cf">rw</span> [zpow_natCast]; <span class="cf">exact</span> hdq1</span>
+<span id="cb62-58"><a href="#cb62-58" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> rationalExponent ndigits2</span>
+<span id="cb62-59"><a href="#cb62-59" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> only []</span>
+<span id="cb62-60"><a href="#cb62-60" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hE : ((a + <span class="dv">1</span> : ℕ) : ℤ) - ((b + <span class="dv">1</span> : ℕ) : ℤ) = (a : ℤ) - b := <span class="kw">by</span> <span class="cf">push_cast</span>; <span class="cf">ring</span></span>
+<span id="cb62-61"><a href="#cb62-61" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hE]</span>
+<span id="cb62-62"><a href="#cb62-62" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hb : (n : ℚ) / d &lt; (<span class="dv">2</span> : ℚ) ^ ((a : ℤ) - b)</span>
+<span id="cb62-63"><a href="#cb62-63" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_pos ((hbelow _).mpr hb)]</span>
+<span id="cb62-64"><a href="#cb62-64" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ⟨hlo, <span class="kw">by</span> <span class="cf">simpa</span> <span class="kw">using</span> hb⟩</span>
+<span id="cb62-65"><a href="#cb62-65" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_neg (<span class="kw">fun</span> h =&gt; hb ((hbelow _).mp h))]</span>
+<span id="cb62-66"><a href="#cb62-66" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ⟨not_lt.mp hb, hhi⟩</span>
+<span id="cb62-67"><a href="#cb62-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb62-68"><a href="#cb62-68" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_rational_exponent(n, d)` is `⌊log₂ (n / d)⌋` for positive `n` and `d`. -/</span></span>
+<span id="cb62-69"><a href="#cb62-69" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> rationalExponent_eq_log (n d : ℕ) (hn : <span class="dv">0</span> &lt; n) (hd : <span class="dv">0</span> &lt; d) :</span>
+<span id="cb62-70"><a href="#cb62-70" aria-hidden="true" tabindex="-1"></a>    rationalExponent n d = Int.log <span class="dv">2</span> ((n : ℚ) / d) := <span class="kw">by</span></span>
+<span id="cb62-71"><a href="#cb62-71" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨h1, h2⟩ := rationalExponent_spec n d hn hd</span>
+<span id="cb62-72"><a href="#cb62-72" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hpos : (<span class="dv">0</span> : ℚ) &lt; n / d := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb62-73"><a href="#cb62-73" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> l1 := Int.zpow_log_le_self (b := <span class="dv">2</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>) hpos</span>
+<span id="cb62-74"><a href="#cb62-74" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> l2 := Int.lt_zpow_succ_log_self (b := <span class="dv">2</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>) ((n : ℚ) / d)</span>
+<span id="cb62-75"><a href="#cb62-75" aria-hidden="true" tabindex="-1"></a>  <span class="cf">push_cast</span> <span class="kw">at</span> l1 l2</span>
+<span id="cb62-76"><a href="#cb62-76" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> u1 := (zpow_lt_zpow_iff_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span> : (<span class="dv">1</span> : ℚ) &lt; <span class="dv">2</span>)).mp (lt_of_le_of_lt h1 l2)</span>
+<span id="cb62-77"><a href="#cb62-77" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> u2 := (zpow_lt_zpow_iff_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span> : (<span class="dv">1</span> : ℚ) &lt; <span class="dv">2</span>)).mp (lt_of_le_of_lt l1 h2)</span>
+<span id="cb62-78"><a href="#cb62-78" aria-hidden="true" tabindex="-1"></a>  <span class="cf">omega</span></span></code></pre></div>
+<h2 id="rounding-the-scaled-quotient-to-an-integer">Rounding the scaled
+quotient to an integer</h2>
+<div class="sourceCode" id="cb63"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The integer rounding step of `_nearest_binary64`: the quotient, plus one when twice the</span></span>
+<span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a><span class="do">remainder exceeds the divisor, or equals it and the quotient is odd. -/</span></span>
+<span id="cb63-3"><a href="#cb63-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> roundHalfEven (N D : ℕ) : ℕ :=</span>
+<span id="cb63-4"><a href="#cb63-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> mantissa := N / D</span>
+<span id="cb63-5"><a href="#cb63-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> remainder := N % D</span>
+<span id="cb63-6"><a href="#cb63-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> twice := <span class="dv">2</span> * remainder</span>
+<span id="cb63-7"><a href="#cb63-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> twice &gt; D ∨ (twice = D ∧ mantissa % <span class="dv">2</span> = <span class="dv">1</span>) <span class="kw">then</span> mantissa + <span class="dv">1</span> <span class="kw">else</span> mantissa</span>
+<span id="cb63-8"><a href="#cb63-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb63-9"><a href="#cb63-9" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> <span class="kw">theorem</span> scaled_abs (N D : ℕ) (hD : <span class="dv">0</span> &lt; D) (x : ℚ) :</span>
+<span id="cb63-10"><a href="#cb63-10" aria-hidden="true" tabindex="-1"></a>    |x - (N : ℚ) / D| = |x * D - N| / D := <span class="kw">by</span></span>
+<span id="cb63-11"><a href="#cb63-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hDq : (<span class="dv">0</span> : ℚ) &lt; D := <span class="kw">by</span> exact_mod_cast hD</span>
+<span id="cb63-12"><a href="#cb63-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [<span class="kw">show</span> x - (N : ℚ) / D = (x * D - N) / D <span class="kw">by</span> <span class="cf">field_simp</span>, abs_div, abs_of_pos hDq]</span>
+<span id="cb63-13"><a href="#cb63-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb63-14"><a href="#cb63-14" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Lower bounds on the scaled distance from an integer `k` to `N / D`, by the position of `k`</span></span>
+<span id="cb63-15"><a href="#cb63-15" aria-hidden="true" tabindex="-1"></a><span class="do">relative to the quotient `m`. -/</span></span>
+<span id="cb63-16"><a href="#cb63-16" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> <span class="kw">theorem</span> grid_bounds (D m r k : ℚ) (hD : <span class="dv">0</span> &lt; D) (hr : <span class="dv">0</span> ≤ r) :</span>
+<span id="cb63-17"><a href="#cb63-17" aria-hidden="true" tabindex="-1"></a>    (k ≤ m - <span class="dv">1</span> → D + r ≤ |k * D - (D * m + r)|) ∧</span>
+<span id="cb63-18"><a href="#cb63-18" aria-hidden="true" tabindex="-1"></a>    (k ≤ m → r ≤ |k * D - (D * m + r)|) ∧</span>
+<span id="cb63-19"><a href="#cb63-19" aria-hidden="true" tabindex="-1"></a>    (k = m → |k * D - (D * m + r)| = r) ∧</span>
+<span id="cb63-20"><a href="#cb63-20" aria-hidden="true" tabindex="-1"></a>    (k = m + <span class="dv">1</span> → |k * D - (D * m + r)| = |D - r|) ∧</span>
+<span id="cb63-21"><a href="#cb63-21" aria-hidden="true" tabindex="-1"></a>    (m + <span class="dv">1</span> ≤ k → D - r ≤ |k * D - (D * m + r)|) ∧</span>
+<span id="cb63-22"><a href="#cb63-22" aria-hidden="true" tabindex="-1"></a>    (m + <span class="dv">2</span> ≤ k → <span class="dv">2</span> * D - r ≤ |k * D - (D * m + r)|) := <span class="kw">by</span></span>
+<span id="cb63-23"><a href="#cb63-23" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨fun h =&gt; ?_, <span class="kw">fun</span> h =&gt; ?_, <span class="kw">fun</span> h =&gt; ?_, <span class="kw">fun</span> h =&gt; ?_, <span class="kw">fun</span> h =&gt; ?_, <span class="kw">fun</span> h =&gt; ?_⟩</span>
+<span id="cb63-24"><a href="#cb63-24" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := mul_le_mul_of_nonneg_right h hD.le</span>
+<span id="cb63-25"><a href="#cb63-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> le_abs.mpr (Or.inr (<span class="kw">by</span> nlinarith))</span>
+<span id="cb63-26"><a href="#cb63-26" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := mul_le_mul_of_nonneg_right h hD.le</span>
+<span id="cb63-27"><a href="#cb63-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> le_abs.mpr (Or.inr (<span class="kw">by</span> nlinarith))</span>
+<span id="cb63-28"><a href="#cb63-28" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [h, <span class="kw">show</span> m * D - (D * m + r) = -r <span class="kw">by</span> <span class="cf">ring</span>, abs_neg, abs_of_nonneg hr]</span>
+<span id="cb63-29"><a href="#cb63-29" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [h]; <span class="cf">congr</span> <span class="dv">1</span>; <span class="cf">ring</span></span>
+<span id="cb63-30"><a href="#cb63-30" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := mul_le_mul_of_nonneg_right h hD.le</span>
+<span id="cb63-31"><a href="#cb63-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> le_abs.mpr (Or.inl (<span class="kw">by</span> nlinarith))</span>
+<span id="cb63-32"><a href="#cb63-32" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := mul_le_mul_of_nonneg_right h hD.le</span>
+<span id="cb63-33"><a href="#cb63-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> le_abs.mpr (Or.inl (<span class="kw">by</span> nlinarith))</span>
+<span id="cb63-34"><a href="#cb63-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb63-35"><a href="#cb63-35" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `roundHalfEven N D` is an integer nearest `N / D`, its tie goes to the even integer, and it</span></span>
+<span id="cb63-36"><a href="#cb63-36" aria-hidden="true" tabindex="-1"></a><span class="do">is the quotient or the quotient plus one. -/</span></span>
+<span id="cb63-37"><a href="#cb63-37" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> roundHalfEven_spec (N D : ℕ) (hD : <span class="dv">0</span> &lt; D) :</span>
+<span id="cb63-38"><a href="#cb63-38" aria-hidden="true" tabindex="-1"></a>    (∀ k : ℤ, |(roundHalfEven N D : ℚ) - N / D| ≤ |(k : ℚ) - N / D|) ∧</span>
+<span id="cb63-39"><a href="#cb63-39" aria-hidden="true" tabindex="-1"></a>    (∀ k : ℤ, |(k : ℚ) - N / D| = |(roundHalfEven N D : ℚ) - N / D| →</span>
+<span id="cb63-40"><a href="#cb63-40" aria-hidden="true" tabindex="-1"></a>      k ≠ (roundHalfEven N D : ℤ) → Even (roundHalfEven N D)) ∧</span>
+<span id="cb63-41"><a href="#cb63-41" aria-hidden="true" tabindex="-1"></a>    (N / D ≤ roundHalfEven N D ∧ roundHalfEven N D ≤ N / D + <span class="dv">1</span>) := <span class="kw">by</span></span>
+<span id="cb63-42"><a href="#cb63-42" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hDq : (<span class="dv">0</span> : ℚ) &lt; D := <span class="kw">by</span> exact_mod_cast hD</span>
+<span id="cb63-43"><a href="#cb63-43" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hN : (N : ℚ) = D * (N / D : ℕ) + (N % D : ℕ) := <span class="kw">by</span></span>
+<span id="cb63-44"><a href="#cb63-44" aria-hidden="true" tabindex="-1"></a>    exact_mod_cast (Nat.div_add_mod N D).symm</span>
+<span id="cb63-45"><a href="#cb63-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hr0 : (<span class="dv">0</span> : ℚ) ≤ (N % D : ℕ) := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb63-46"><a href="#cb63-46" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hrD : ((N % D : ℕ) : ℚ) &lt; D := <span class="kw">by</span> exact_mod_cast Nat.mod_lt N hD</span>
+<span id="cb63-47"><a href="#cb63-47" aria-hidden="true" tabindex="-1"></a>  set m := N / D <span class="kw">with</span> hm</span>
+<span id="cb63-48"><a href="#cb63-48" aria-hidden="true" tabindex="-1"></a>  set r := N % D <span class="kw">with</span> hr</span>
+<span id="cb63-49"><a href="#cb63-49" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> key : ∀ k : ℤ, |(k : ℚ) - N / D| = |(k : ℚ) * D - (D * m + r)| / D := <span class="kw">by</span></span>
+<span id="cb63-50"><a href="#cb63-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> k; <span class="cf">rw</span> [scaled_abs N D hD, hN]</span>
+<span id="cb63-51"><a href="#cb63-51" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> roundHalfEven</span>
+<span id="cb63-52"><a href="#cb63-52" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> only []</span>
+<span id="cb63-53"><a href="#cb63-53" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [← hm, ← hr]</span>
+<span id="cb63-54"><a href="#cb63-54" aria-hidden="true" tabindex="-1"></a>  <span class="cf">split_ifs</span> <span class="kw">with</span> hup</span>
+<span id="cb63-55"><a href="#cb63-55" aria-hidden="true" tabindex="-1"></a>  · <span class="co">-- rounded up: `2 r ≥ D`</span></span>
+<span id="cb63-56"><a href="#cb63-56" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h2r : (D : ℚ) ≤ <span class="dv">2</span> * r := <span class="kw">by</span></span>
+<span id="cb63-57"><a href="#cb63-57" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> hup <span class="kw">with</span> h | ⟨h, _⟩</span>
+<span id="cb63-58"><a href="#cb63-58" aria-hidden="true" tabindex="-1"></a>      · exact_mod_cast h.le</span>
+<span id="cb63-59"><a href="#cb63-59" aria-hidden="true" tabindex="-1"></a>      · exact_mod_cast h.symm.le</span>
+<span id="cb63-60"><a href="#cb63-60" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hM : |(((m + <span class="dv">1</span> : ℕ) : ℤ) : ℚ) * D - (D * m + r)| = D - r := <span class="kw">by</span></span>
+<span id="cb63-61"><a href="#cb63-61" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨-, -, -, h4, -, -⟩ := grid_bounds D m r ((m : ℚ) + <span class="dv">1</span>) hDq hr0</span>
+<span id="cb63-62"><a href="#cb63-62" aria-hidden="true" tabindex="-1"></a>      <span class="cf">push_cast</span>; <span class="cf">rw</span> [h4 <span class="cf">rfl</span>, abs_of_nonneg (<span class="kw">by</span> <span class="cf">linarith</span>)]</span>
+<span id="cb63-63"><a href="#cb63-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨fun k =&gt; ?_, <span class="kw">fun</span> k hk hne =&gt; ?_, <span class="kw">by</span> omega⟩</span>
+<span id="cb63-64"><a href="#cb63-64" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> hM&#39; := hM; <span class="cf">push_cast</span> <span class="kw">at</span> hM&#39;</span>
+<span id="cb63-65"><a href="#cb63-65" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [<span class="kw">show</span> ((m + <span class="dv">1</span> : ℕ) : ℚ) = (((m + <span class="dv">1</span> : ℕ) : ℤ) : ℚ) <span class="kw">by</span> <span class="cf">push_cast</span>; <span class="cf">rfl</span>, key, key]</span>
+<span id="cb63-66"><a href="#cb63-66" aria-hidden="true" tabindex="-1"></a>      <span class="cf">apply</span> div_le_div_of_nonneg_right _ hDq.le</span>
+<span id="cb63-67"><a href="#cb63-67" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hM]</span>
+<span id="cb63-68"><a href="#cb63-68" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨-, h2, -, -, h5, -⟩ := grid_bounds D m r k hDq hr0</span>
+<span id="cb63-69"><a href="#cb63-69" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> le_or_gt k (m : ℤ) <span class="kw">with</span> h | h</span>
+<span id="cb63-70"><a href="#cb63-70" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h2 (<span class="kw">by</span> exact_mod_cast h); <span class="cf">linarith</span></span>
+<span id="cb63-71"><a href="#cb63-71" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> h5 (<span class="kw">by</span> exact_mod_cast h)</span>
+<span id="cb63-72"><a href="#cb63-72" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [<span class="kw">show</span> ((m + <span class="dv">1</span> : ℕ) : ℚ) = (((m + <span class="dv">1</span> : ℕ) : ℤ) : ℚ) <span class="kw">by</span> <span class="cf">push_cast</span>; <span class="cf">rfl</span>, key, key,</span>
+<span id="cb63-73"><a href="#cb63-73" aria-hidden="true" tabindex="-1"></a>        hM] <span class="kw">at</span> hk</span>
+<span id="cb63-74"><a href="#cb63-74" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hk&#39; : |(k : ℚ) * D - (D * m + r)| = D - r := <span class="kw">by</span></span>
+<span id="cb63-75"><a href="#cb63-75" aria-hidden="true" tabindex="-1"></a>        <span class="cf">field_simp</span> <span class="kw">at</span> hk; <span class="cf">linarith</span> [hk]</span>
+<span id="cb63-76"><a href="#cb63-76" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨h1, -, h3, -, -, h6⟩ := grid_bounds D m r k hDq hr0</span>
+<span id="cb63-77"><a href="#cb63-77" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hpos : (<span class="dv">0</span> : ℚ) &lt; r := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb63-78"><a href="#cb63-78" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> (<span class="kw">show</span> k ≤ (m : ℤ) - <span class="dv">1</span> ∨ k = m ∨ k = m + <span class="dv">1</span> ∨ (m : ℤ) + <span class="dv">2</span> ≤ k <span class="kw">by</span> <span class="cf">omega</span>) <span class="kw">with</span></span>
+<span id="cb63-79"><a href="#cb63-79" aria-hidden="true" tabindex="-1"></a>        h | h | h | h</span>
+<span id="cb63-80"><a href="#cb63-80" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h1 (<span class="kw">by</span> exact_mod_cast h); <span class="cf">linarith</span></span>
+<span id="cb63-81"><a href="#cb63-81" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h3 (<span class="kw">by</span> exact_mod_cast h)</span>
+<span id="cb63-82"><a href="#cb63-82" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> h2r&#39; : <span class="dv">2</span> * r = D := <span class="kw">by</span></span>
+<span id="cb63-83"><a href="#cb63-83" aria-hidden="true" tabindex="-1"></a>          <span class="kw">have</span> : (<span class="dv">2</span> * r : ℚ) = D := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb63-84"><a href="#cb63-84" aria-hidden="true" tabindex="-1"></a>          exact_mod_cast this</span>
+<span id="cb63-85"><a href="#cb63-85" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rcases</span> hup <span class="kw">with</span> h&#39; | ⟨-, hodd⟩</span>
+<span id="cb63-86"><a href="#cb63-86" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">omega</span></span>
+<span id="cb63-87"><a href="#cb63-87" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">exact</span> (Nat.even_add_one.mpr (Nat.not_even_iff_odd.mpr (Nat.odd_iff.mpr hodd)))</span>
+<span id="cb63-88"><a href="#cb63-88" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> absurd (<span class="kw">by</span> <span class="cf">push_cast</span> [h]; <span class="cf">ring</span>) hne</span>
+<span id="cb63-89"><a href="#cb63-89" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h6 (<span class="kw">by</span> exact_mod_cast h); <span class="cf">linarith</span></span>
+<span id="cb63-90"><a href="#cb63-90" aria-hidden="true" tabindex="-1"></a>  · <span class="co">-- kept: `2 r ≤ D`</span></span>
+<span id="cb63-91"><a href="#cb63-91" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h2r : <span class="dv">2</span> * (r : ℚ) ≤ D := <span class="kw">by</span></span>
+<span id="cb63-92"><a href="#cb63-92" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : <span class="dv">2</span> * r ≤ D := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb63-93"><a href="#cb63-93" aria-hidden="true" tabindex="-1"></a>      exact_mod_cast this</span>
+<span id="cb63-94"><a href="#cb63-94" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hM : |(((m : ℕ) : ℤ) : ℚ) * D - (D * m + r)| = r := <span class="kw">by</span></span>
+<span id="cb63-95"><a href="#cb63-95" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨-, -, h3, -, -, -⟩ := grid_bounds D m r (m : ℚ) hDq hr0</span>
+<span id="cb63-96"><a href="#cb63-96" aria-hidden="true" tabindex="-1"></a>      <span class="cf">push_cast</span>; <span class="cf">exact</span> h3 <span class="cf">rfl</span></span>
+<span id="cb63-97"><a href="#cb63-97" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨fun k =&gt; ?_, <span class="kw">fun</span> k hk hne =&gt; ?_, <span class="kw">by</span> omega⟩</span>
+<span id="cb63-98"><a href="#cb63-98" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [<span class="kw">show</span> ((m : ℕ) : ℚ) = (((m : ℕ) : ℤ) : ℚ) <span class="kw">by</span> <span class="cf">push_cast</span>; <span class="cf">rfl</span>, key, key]</span>
+<span id="cb63-99"><a href="#cb63-99" aria-hidden="true" tabindex="-1"></a>      <span class="cf">apply</span> div_le_div_of_nonneg_right _ hDq.le</span>
+<span id="cb63-100"><a href="#cb63-100" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hM]</span>
+<span id="cb63-101"><a href="#cb63-101" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨-, h2, -, -, h5, -⟩ := grid_bounds D m r k hDq hr0</span>
+<span id="cb63-102"><a href="#cb63-102" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> le_or_gt k (m : ℤ) <span class="kw">with</span> h | h</span>
+<span id="cb63-103"><a href="#cb63-103" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> h2 (<span class="kw">by</span> exact_mod_cast h)</span>
+<span id="cb63-104"><a href="#cb63-104" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h5 (<span class="kw">by</span> exact_mod_cast h); <span class="cf">linarith</span></span>
+<span id="cb63-105"><a href="#cb63-105" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [<span class="kw">show</span> ((m : ℕ) : ℚ) = (((m : ℕ) : ℤ) : ℚ) <span class="kw">by</span> <span class="cf">push_cast</span>; <span class="cf">rfl</span>, key, key, hM] <span class="kw">at</span> hk</span>
+<span id="cb63-106"><a href="#cb63-106" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hk&#39; : |(k : ℚ) * D - (D * m + r)| = r := <span class="kw">by</span></span>
+<span id="cb63-107"><a href="#cb63-107" aria-hidden="true" tabindex="-1"></a>        <span class="cf">field_simp</span> <span class="kw">at</span> hk; <span class="cf">linarith</span> [hk]</span>
+<span id="cb63-108"><a href="#cb63-108" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨h1, -, -, h4, -, h6⟩ := grid_bounds D m r k hDq hr0</span>
+<span id="cb63-109"><a href="#cb63-109" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> (<span class="kw">show</span> k ≤ (m : ℤ) - <span class="dv">1</span> ∨ k = m ∨ k = m + <span class="dv">1</span> ∨ (m : ℤ) + <span class="dv">2</span> ≤ k <span class="kw">by</span> <span class="cf">omega</span>) <span class="kw">with</span></span>
+<span id="cb63-110"><a href="#cb63-110" aria-hidden="true" tabindex="-1"></a>        h | h | h | h</span>
+<span id="cb63-111"><a href="#cb63-111" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h1 (<span class="kw">by</span> exact_mod_cast h); <span class="cf">linarith</span></span>
+<span id="cb63-112"><a href="#cb63-112" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> absurd (<span class="kw">by</span> <span class="cf">rw</span> [h]) hne</span>
+<span id="cb63-113"><a href="#cb63-113" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h4 (<span class="kw">by</span> exact_mod_cast h)</span>
+<span id="cb63-114"><a href="#cb63-114" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [hk&#39;, abs_of_nonneg (<span class="kw">by</span> <span class="cf">linarith</span>)] <span class="kw">at</span> this</span>
+<span id="cb63-115"><a href="#cb63-115" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> h2r&#39; : <span class="dv">2</span> * r = D := <span class="kw">by</span></span>
+<span id="cb63-116"><a href="#cb63-116" aria-hidden="true" tabindex="-1"></a>          <span class="kw">have</span> : (<span class="dv">2</span> * r : ℚ) = D := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb63-117"><a href="#cb63-117" aria-hidden="true" tabindex="-1"></a>          exact_mod_cast this</span>
+<span id="cb63-118"><a href="#cb63-118" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> : ¬ m % <span class="dv">2</span> = <span class="dv">1</span> := <span class="kw">fun</span> hodd =&gt; hup (Or.inr ⟨h2r&#39;, hodd⟩)</span>
+<span id="cb63-119"><a href="#cb63-119" aria-hidden="true" tabindex="-1"></a>        <span class="cf">exact</span> Nat.even_iff.mpr (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb63-120"><a href="#cb63-120" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> := h6 (<span class="kw">by</span> exact_mod_cast h); <span class="cf">linarith</span></span></code></pre></div>
+<h2 id="nearest_binary64-in-pieces"><code>_nearest_binary64</code> in
+pieces</h2>
+<p><code>nearestBinary64</code> is the single transcription;
+<code>roundHalfEven</code>, <code>packWord</code> and
+<code>magnitudeWord</code> name its integer rounding step, its word
+construction and its result before the sign bits, and
+<code>nearestBinary64_eq</code> checks that they recompose it.</p>
+<div class="sourceCode" id="cb64"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The word construction of `_nearest_binary64` from a rounded mantissa. -/</span></span>
+<span id="cb64-2"><a href="#cb64-2" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> packWord (mantissa : ℕ) (exponent : ℤ) : ℕ :=</span>
+<span id="cb64-3"><a href="#cb64-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> hidden_bit := <span class="dv">1</span> &lt;&lt;&lt; <span class="dv">52</span></span>
+<span id="cb64-4"><a href="#cb64-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> mantissa &lt; hidden_bit <span class="kw">then</span> mantissa</span>
+<span id="cb64-5"><a href="#cb64-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">else</span></span>
+<span id="cb64-6"><a href="#cb64-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">let</span> field := max exponent (-<span class="dv">1022</span>) + <span class="dv">1023</span></span>
+<span id="cb64-7"><a href="#cb64-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">let</span> (mantissa, field) :=</span>
+<span id="cb64-8"><a href="#cb64-8" aria-hidden="true" tabindex="-1"></a>      <span class="kw">if</span> mantissa = <span class="dv">2</span> * hidden_bit <span class="kw">then</span> (hidden_bit, field + <span class="dv">1</span>) <span class="kw">else</span> (mantissa, field)</span>
+<span id="cb64-9"><a href="#cb64-9" aria-hidden="true" tabindex="-1"></a>    (field.toNat &lt;&lt;&lt; <span class="dv">52</span>) ||| (mantissa - hidden_bit)</span>
+<span id="cb64-10"><a href="#cb64-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-11"><a href="#cb64-11" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_nearest_binary64` after its sign, on the magnitude `n / d`. -/</span></span>
+<span id="cb64-12"><a href="#cb64-12" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> magnitudeWord (n d : ℕ) : ℕ :=</span>
+<span id="cb64-13"><a href="#cb64-13" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> exponent := rationalExponent n d</span>
+<span id="cb64-14"><a href="#cb64-14" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> exponent &gt; <span class="dv">1023</span> <span class="kw">then</span> <span class="dv">0x7ff0000000000000</span> <span class="kw">else</span></span>
+<span id="cb64-15"><a href="#cb64-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> exponent &lt; -<span class="dv">1075</span> <span class="kw">then</span> <span class="dv">0</span> <span class="kw">else</span></span>
+<span id="cb64-16"><a href="#cb64-16" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> shift : ℤ := max (exponent - <span class="dv">52</span>) (-<span class="dv">1074</span>)</span>
+<span id="cb64-17"><a href="#cb64-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> numerator_ := <span class="kw">if</span> shift &lt; <span class="dv">0</span> <span class="kw">then</span> n &lt;&lt;&lt; (-shift).toNat <span class="kw">else</span> n</span>
+<span id="cb64-18"><a href="#cb64-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> denominator_ := <span class="kw">if</span> shift &gt; <span class="dv">0</span> <span class="kw">then</span> d &lt;&lt;&lt; shift.toNat <span class="kw">else</span> d</span>
+<span id="cb64-19"><a href="#cb64-19" aria-hidden="true" tabindex="-1"></a>  packWord (roundHalfEven numerator_ denominator_) exponent</span>
+<span id="cb64-20"><a href="#cb64-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-21"><a href="#cb64-21" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_zero : nearestBinary64 <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">simp</span> [nearestBinary64]</span>
+<span id="cb64-22"><a href="#cb64-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-23"><a href="#cb64-23" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_eq (q : ℚ) (hq : q ≠ <span class="dv">0</span>) :</span>
+<span id="cb64-24"><a href="#cb64-24" aria-hidden="true" tabindex="-1"></a>    nearestBinary64 q = (<span class="kw">if</span> q &lt; <span class="dv">0</span> <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) |||</span>
+<span id="cb64-25"><a href="#cb64-25" aria-hidden="true" tabindex="-1"></a>      magnitudeWord q.num.natAbs q.den := <span class="kw">by</span></span>
+<span id="cb64-26"><a href="#cb64-26" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> nearestBinary64 magnitudeWord</span>
+<span id="cb64-27"><a href="#cb64-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [if_neg hq]</span>
+<span id="cb64-28"><a href="#cb64-28" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> only []</span>
+<span id="cb64-29"><a href="#cb64-29" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> h1 : rationalExponent q.num.natAbs q.den &gt; <span class="dv">1023</span></span>
+<span id="cb64-30"><a href="#cb64-30" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">simp</span> only [if_pos h1]</span>
+<span id="cb64-31"><a href="#cb64-31" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">simp</span> only [if_neg h1]</span>
+<span id="cb64-32"><a href="#cb64-32" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> h2 : rationalExponent q.num.natAbs q.den &lt; -<span class="dv">1075</span></span>
+<span id="cb64-33"><a href="#cb64-33" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> only [if_pos h2, Nat.or_zero]</span>
+<span id="cb64-34"><a href="#cb64-34" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> only [if_neg h2]</span>
+<span id="cb64-35"><a href="#cb64-35" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rfl</span></span></code></pre></div>
+<h2 id="fields-of-assembled-words">Fields of assembled words</h2>
+<div class="sourceCode" id="cb65"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> or_shift52 (f t : ℕ) (ht : t &lt; <span class="dv">2</span> ^ <span class="dv">52</span>) : (f &lt;&lt;&lt; <span class="dv">52</span>) ||| t = f * <span class="dv">2</span> ^ <span class="dv">52</span> + t := <span class="kw">by</span></span>
+<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [← Nat.shiftLeft_add_eq_or_of_lt ht, Nat.shiftLeft_eq]</span>
+<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> sign_or (w : ℕ) (hw : w &lt; <span class="dv">2</span> ^ <span class="dv">63</span>) : (<span class="dv">0x8000000000000000</span> : ℕ) ||| w = <span class="dv">2</span> ^ <span class="dv">63</span> + w := <span class="kw">by</span></span>
+<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">0x8000000000000000</span> : ℕ) = <span class="dv">1</span> &lt;&lt;&lt; <span class="dv">63</span> <span class="kw">from</span> <span class="cf">rfl</span>, ← Nat.shiftLeft_add_eq_or_of_lt hw,</span>
+<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a>    Nat.shiftLeft_eq, one_mul]</span>
+<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> field_pack (f t : ℕ) (hf : f &lt; <span class="dv">2048</span>) (ht : t &lt; <span class="dv">2</span> ^ <span class="dv">52</span>) : field (f * <span class="dv">2</span> ^ <span class="dv">52</span> + t) = f := <span class="kw">by</span></span>
+<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> field; <span class="cf">norm_num</span> <span class="kw">at</span> ht ⊢; <span class="cf">omega</span></span>
+<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> fraction_pack (f t : ℕ) (ht : t &lt; <span class="dv">2</span> ^ <span class="dv">52</span>) : fraction (f * <span class="dv">2</span> ^ <span class="dv">52</span> + t) = t := <span class="kw">by</span></span>
+<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> fraction; <span class="cf">norm_num</span> <span class="kw">at</span> ht ⊢; <span class="cf">omega</span></span>
+<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> signBit_low (w : ℕ) (hw : w &lt; <span class="dv">2</span> ^ <span class="dv">63</span>) : signBit w = false := <span class="kw">by</span></span>
+<span id="cb65-15"><a href="#cb65-15" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> signBit; <span class="cf">norm_num</span> <span class="kw">at</span> hw ⊢; <span class="cf">omega</span></span>
+<span id="cb65-16"><a href="#cb65-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-17"><a href="#cb65-17" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> signBit_high (w : ℕ) (hw : w &lt; <span class="dv">2</span> ^ <span class="dv">63</span>) : signBit (<span class="dv">2</span> ^ <span class="dv">63</span> + w) = true := <span class="kw">by</span></span>
+<span id="cb65-18"><a href="#cb65-18" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> signBit; <span class="cf">norm_num</span> <span class="kw">at</span> hw ⊢; <span class="cf">omega</span></span>
+<span id="cb65-19"><a href="#cb65-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-20"><a href="#cb65-20" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> field_high (w : ℕ) : field (<span class="dv">2</span> ^ <span class="dv">63</span> + w) = field w := <span class="kw">by</span></span>
+<span id="cb65-21"><a href="#cb65-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> field; <span class="cf">norm_num</span>; <span class="cf">omega</span></span>
+<span id="cb65-22"><a href="#cb65-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-23"><a href="#cb65-23" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> fraction_high (w : ℕ) : fraction (<span class="dv">2</span> ^ <span class="dv">63</span> + w) = fraction w := <span class="kw">by</span></span>
+<span id="cb65-24"><a href="#cb65-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> fraction; <span class="cf">norm_num</span>; <span class="cf">omega</span></span>
+<span id="cb65-25"><a href="#cb65-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-26"><a href="#cb65-26" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> field_lt (w : ℕ) : field w &lt; <span class="dv">2048</span> := <span class="kw">by</span></span>
+<span id="cb65-27"><a href="#cb65-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> field; <span class="cf">exact</span> Nat.mod_lt _ (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb65-28"><a href="#cb65-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-29"><a href="#cb65-29" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> fraction_lt (w : ℕ) : fraction w &lt; <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span></span>
+<span id="cb65-30"><a href="#cb65-30" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> fraction; <span class="cf">exact</span> Nat.mod_lt _ (<span class="kw">by</span> <span class="cf">norm_num</span>)</span></code></pre></div>
+<h2 id="values">Values</h2>
+<div class="sourceCode" id="cb66"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> magnitude_eq (w : ℕ) :</span>
+<span id="cb66-2"><a href="#cb66-2" aria-hidden="true" tabindex="-1"></a>    magnitude w = (significand w : ℚ) * <span class="dv">2</span> ^ (max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>) := <span class="kw">by</span></span>
+<span id="cb66-3"><a href="#cb66-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> magnitude significand</span>
+<span id="cb66-4"><a href="#cb66-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">split_ifs</span> <span class="kw">with</span> h</span>
+<span id="cb66-5"><a href="#cb66-5" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [h, <span class="kw">show</span> max ((<span class="dv">0</span> : ℕ) : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> = -<span class="dv">1022</span> + (-<span class="dv">52</span>) <span class="kw">by</span> <span class="cf">norm_num</span>,</span>
+<span id="cb66-6"><a href="#cb66-6" aria-hidden="true" tabindex="-1"></a>      zpow_add₀ two_ne_zero, <span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">52</span> : ℤ) = <span class="dv">1</span> / <span class="dv">2</span> ^ <span class="dv">52</span> <span class="kw">by</span> <span class="cf">norm_num</span>]</span>
+<span id="cb66-7"><a href="#cb66-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">ring</span></span>
+<span id="cb66-8"><a href="#cb66-8" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> h1 : max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> = ((field w : ℤ) - <span class="dv">1023</span>) + (-<span class="dv">52</span>) := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb66-9"><a href="#cb66-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [h1, zpow_add₀ two_ne_zero, zpow_neg,</span>
+<span id="cb66-10"><a href="#cb66-10" aria-hidden="true" tabindex="-1"></a>      <span class="kw">show</span> ((<span class="dv">2</span> : ℚ) ^ (<span class="dv">52</span> : ℤ)) = <span class="dv">2</span> ^ (<span class="dv">52</span> : ℕ) <span class="kw">from</span> zpow_natCast _ _]</span>
+<span id="cb66-11"><a href="#cb66-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">push_cast</span></span>
+<span id="cb66-12"><a href="#cb66-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">field_simp</span></span>
+<span id="cb66-13"><a href="#cb66-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">norm_num</span></span>
+<span id="cb66-14"><a href="#cb66-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-15"><a href="#cb66-15" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> magnitude_nonneg (w : ℕ) : <span class="dv">0</span> ≤ magnitude w := <span class="kw">by</span></span>
+<span id="cb66-16"><a href="#cb66-16" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [magnitude_eq]; <span class="cf">positivity</span></span>
+<span id="cb66-17"><a href="#cb66-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-18"><a href="#cb66-18" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> abs_value (w : ℕ) : |value w| = magnitude w := <span class="kw">by</span></span>
+<span id="cb66-19"><a href="#cb66-19" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> value; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">simp</span> [abs_of_nonneg (magnitude_nonneg w)]</span>
+<span id="cb66-20"><a href="#cb66-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-21"><a href="#cb66-21" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The finite nonnegative binary64 values: `m * 2 ^ k` with a 53-bit integer `m` and `k` at</span></span>
+<span id="cb66-22"><a href="#cb66-22" aria-hidden="true" tabindex="-1"></a><span class="do">least the subnormal exponent `-1074`. The largest exponent is not needed by the proofs. -/</span></span>
+<span id="cb66-23"><a href="#cb66-23" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> Representable (y : ℚ) : <span class="kw">Prop</span> :=</span>
+<span id="cb66-24"><a href="#cb66-24" aria-hidden="true" tabindex="-1"></a>  ∃ m : ℕ, ∃ k : ℤ, m &lt; <span class="dv">2</span> ^ <span class="dv">53</span> ∧ -<span class="dv">1074</span> ≤ k ∧ y = m * <span class="dv">2</span> ^ k</span>
+<span id="cb66-25"><a href="#cb66-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-26"><a href="#cb66-26" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> magnitude_representable (w : ℕ) : Representable (magnitude w) := <span class="kw">by</span></span>
+<span id="cb66-27"><a href="#cb66-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨significand w, max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>, ?_, <span class="kw">by</span> <span class="cf">omega</span>, magnitude_eq w⟩</span>
+<span id="cb66-28"><a href="#cb66-28" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := fraction_lt w</span>
+<span id="cb66-29"><a href="#cb66-29" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> significand; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">norm_num</span> <span class="kw">at</span> this ⊢ &lt;;&gt; <span class="cf">omega</span></span></code></pre></div>
+<h2 id="the-word-construction">The word construction</h2>
+<div class="sourceCode" id="cb67"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The word construction: below `2 ^ 52` a subnormal word, otherwise a normal word with the</span></span>
+<span id="cb67-2"><a href="#cb67-2" aria-hidden="true" tabindex="-1"></a><span class="do">hidden bit removed, and at `2 ^ 53` the carry into the exponent field, which at `exponent =</span></span>
+<span id="cb67-3"><a href="#cb67-3" aria-hidden="true" tabindex="-1"></a><span class="do">1023` is the infinity. Every finite result has value `mantissa * 2 ^ shift`. -/</span></span>
+<span id="cb67-4"><a href="#cb67-4" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> packWord_spec (M : ℕ) (E : ℤ) (hE : E ≤ <span class="dv">1023</span>) (hM : M ≤ <span class="dv">2</span> ^ <span class="dv">53</span>)</span>
+<span id="cb67-5"><a href="#cb67-5" aria-hidden="true" tabindex="-1"></a>    (hsub : M &lt; <span class="dv">2</span> ^ <span class="dv">52</span> → max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) = -<span class="dv">1074</span>) :</span>
+<span id="cb67-6"><a href="#cb67-6" aria-hidden="true" tabindex="-1"></a>    packWord M E &lt; <span class="dv">2</span> ^ <span class="dv">63</span> ∧</span>
+<span id="cb67-7"><a href="#cb67-7" aria-hidden="true" tabindex="-1"></a>    (M = <span class="dv">2</span> ^ <span class="dv">53</span> ∧ E = <span class="dv">1023</span> → packWord M E = <span class="dv">2047</span> * <span class="dv">2</span> ^ <span class="dv">52</span>) ∧</span>
+<span id="cb67-8"><a href="#cb67-8" aria-hidden="true" tabindex="-1"></a>    (¬(M = <span class="dv">2</span> ^ <span class="dv">53</span> ∧ E = <span class="dv">1023</span>) → field (packWord M E) ≠ <span class="dv">2047</span> ∧</span>
+<span id="cb67-9"><a href="#cb67-9" aria-hidden="true" tabindex="-1"></a>       magnitude (packWord M E) = M * <span class="dv">2</span> ^ (max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>)) ∧</span>
+<span id="cb67-10"><a href="#cb67-10" aria-hidden="true" tabindex="-1"></a>       (Even M → Even (significand (packWord M E)))) := <span class="kw">by</span></span>
+<span id="cb67-11"><a href="#cb67-11" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> packWord</span>
+<span id="cb67-12"><a href="#cb67-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> only [<span class="kw">show</span> (<span class="dv">1</span> &lt;&lt;&lt; <span class="dv">52</span> : ℕ) = <span class="dv">2</span> ^ <span class="dv">52</span> <span class="kw">from</span> <span class="cf">rfl</span>]</span>
+<span id="cb67-13"><a href="#cb67-13" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hlt : M &lt; <span class="dv">2</span> ^ <span class="dv">52</span></span>
+<span id="cb67-14"><a href="#cb67-14" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_pos hlt]</span>
+<span id="cb67-15"><a href="#cb67-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hf : field M = <span class="dv">0</span> := <span class="kw">by</span></span>
+<span id="cb67-16"><a href="#cb67-16" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> := field_pack <span class="dv">0</span> M (<span class="kw">by</span> <span class="cf">norm_num</span>) hlt; <span class="cf">simpa</span> <span class="kw">using</span> this</span>
+<span id="cb67-17"><a href="#cb67-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hfr : fraction M = M := <span class="kw">by</span></span>
+<span id="cb67-18"><a href="#cb67-18" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> := fraction_pack <span class="dv">0</span> M hlt; <span class="cf">simpa</span> <span class="kw">using</span> this</span>
+<span id="cb67-19"><a href="#cb67-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hsig : significand M = M := <span class="kw">by</span> <span class="cf">simp</span> [significand, hf, hfr]</span>
+<span id="cb67-20"><a href="#cb67-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨by <span class="cf">omega</span>, <span class="kw">fun</span> h =&gt; <span class="kw">by</span> <span class="cf">omega</span>, <span class="kw">fun</span> _ =&gt; ⟨by <span class="cf">omega</span>, ?_, <span class="kw">by</span> <span class="cf">rw</span> [hsig]; <span class="cf">exact</span> id⟩⟩</span>
+<span id="cb67-21"><a href="#cb67-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [magnitude_eq, hsig, hf, hsub hlt]; <span class="cf">norm_num</span></span>
+<span id="cb67-22"><a href="#cb67-22" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_neg hlt]</span>
+<span id="cb67-23"><a href="#cb67-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hc : M = <span class="dv">2</span> * <span class="dv">2</span> ^ <span class="dv">52</span></span>
+<span id="cb67-24"><a href="#cb67-24" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [if_pos hc]</span>
+<span id="cb67-25"><a href="#cb67-25" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp</span> only []</span>
+<span id="cb67-26"><a href="#cb67-26" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hF : (<span class="dv">0</span> : ℤ) ≤ max E (-<span class="dv">1022</span>) + <span class="dv">1023</span> + <span class="dv">1</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-27"><a href="#cb67-27" aria-hidden="true" tabindex="-1"></a>      set F := (max E (-<span class="dv">1022</span>) + <span class="dv">1023</span> + <span class="dv">1</span>).toNat <span class="kw">with</span> hFdef</span>
+<span id="cb67-28"><a href="#cb67-28" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hFz : (F : ℤ) = max E (-<span class="dv">1022</span>) + <span class="dv">1024</span> := <span class="kw">by</span> <span class="cf">rw</span> [hFdef, Int.toNat_of_nonneg hF]; <span class="cf">ring</span></span>
+<span id="cb67-29"><a href="#cb67-29" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hword : (F &lt;&lt;&lt; <span class="dv">52</span>) ||| (<span class="dv">2</span> ^ <span class="dv">52</span> - <span class="dv">2</span> ^ <span class="dv">52</span>) = F * <span class="dv">2</span> ^ <span class="dv">52</span> + <span class="dv">0</span> := <span class="kw">by</span></span>
+<span id="cb67-30"><a href="#cb67-30" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [Nat.sub_self]; <span class="cf">exact</span> or_shift52 F <span class="dv">0</span> (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb67-31"><a href="#cb67-31" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hword]</span>
+<span id="cb67-32"><a href="#cb67-32" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hF2 : F &lt; <span class="dv">2048</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-33"><a href="#cb67-33" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> ⟨by <span class="cf">norm_num</span>; <span class="cf">omega</span>, <span class="kw">fun</span> h =&gt; <span class="kw">by</span> <span class="cf">omega</span>, <span class="kw">fun</span> h =&gt; ?_⟩</span>
+<span id="cb67-34"><a href="#cb67-34" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hfield := field_pack F <span class="dv">0</span> hF2 (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb67-35"><a href="#cb67-35" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hfrac := fraction_pack F <span class="dv">0</span> (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb67-36"><a href="#cb67-36" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hF3 : F ≠ <span class="dv">2047</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-37"><a href="#cb67-37" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hsig : significand (F * <span class="dv">2</span> ^ <span class="dv">52</span> + <span class="dv">0</span>) = <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span></span>
+<span id="cb67-38"><a href="#cb67-38" aria-hidden="true" tabindex="-1"></a>        <span class="cf">simp</span> only [significand, hfield, hfrac]; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">omega</span></span>
+<span id="cb67-39"><a href="#cb67-39" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> ⟨by <span class="cf">rw</span> [hfield]; <span class="cf">exact</span> hF3, ?_, <span class="kw">fun</span> _ =&gt; <span class="kw">by</span> <span class="cf">rw</span> [hsig]; <span class="cf">exact</span> ⟨<span class="dv">2</span> ^ <span class="dv">51</span>, <span class="kw">by</span> norm_num⟩⟩</span>
+<span id="cb67-40"><a href="#cb67-40" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [magnitude_eq, hsig, hfield, hc]</span>
+<span id="cb67-41"><a href="#cb67-41" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [<span class="kw">show</span> max (F : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> = max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) + <span class="dv">1</span> <span class="kw">by</span> <span class="cf">omega</span>, zpow_add_one₀ two_ne_zero]</span>
+<span id="cb67-42"><a href="#cb67-42" aria-hidden="true" tabindex="-1"></a>      <span class="cf">push_cast</span>; <span class="cf">ring</span></span>
+<span id="cb67-43"><a href="#cb67-43" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [if_neg hc]</span>
+<span id="cb67-44"><a href="#cb67-44" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp</span> only []</span>
+<span id="cb67-45"><a href="#cb67-45" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hF : (<span class="dv">0</span> : ℤ) ≤ max E (-<span class="dv">1022</span>) + <span class="dv">1023</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-46"><a href="#cb67-46" aria-hidden="true" tabindex="-1"></a>      set F := (max E (-<span class="dv">1022</span>) + <span class="dv">1023</span>).toNat <span class="kw">with</span> hFdef</span>
+<span id="cb67-47"><a href="#cb67-47" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hFz : (F : ℤ) = max E (-<span class="dv">1022</span>) + <span class="dv">1023</span> := <span class="kw">by</span> <span class="cf">rw</span> [hFdef, Int.toNat_of_nonneg hF]</span>
+<span id="cb67-48"><a href="#cb67-48" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hM&#39; : M &lt; <span class="dv">2</span> * <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-49"><a href="#cb67-49" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> ht : M - <span class="dv">2</span> ^ <span class="dv">52</span> &lt; <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-50"><a href="#cb67-50" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [or_shift52 F _ ht]</span>
+<span id="cb67-51"><a href="#cb67-51" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hF2 : F &lt; <span class="dv">2047</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb67-52"><a href="#cb67-52" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hfield := field_pack F _ (<span class="kw">by</span> <span class="cf">omega</span>) ht</span>
+<span id="cb67-53"><a href="#cb67-53" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hfrac := fraction_pack F _ ht</span>
+<span id="cb67-54"><a href="#cb67-54" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hsig : significand (F * <span class="dv">2</span> ^ <span class="dv">52</span> + (M - <span class="dv">2</span> ^ <span class="dv">52</span>)) = M := <span class="kw">by</span></span>
+<span id="cb67-55"><a href="#cb67-55" aria-hidden="true" tabindex="-1"></a>        <span class="cf">simp</span> only [significand, hfield, hfrac]; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">omega</span></span>
+<span id="cb67-56"><a href="#cb67-56" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> ⟨by <span class="cf">norm_num</span> <span class="kw">at</span> ht hM&#39; ⊢; <span class="cf">omega</span>, <span class="kw">fun</span> h =&gt; <span class="kw">by</span> <span class="cf">omega</span>, <span class="kw">fun</span> _ =&gt; ⟨by <span class="cf">omega</span>, ?_, ?_⟩⟩</span>
+<span id="cb67-57"><a href="#cb67-57" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [magnitude_eq, hsig, hfield, <span class="kw">show</span> max (F : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> = max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) <span class="kw">by</span> <span class="cf">omega</span>]</span>
+<span id="cb67-58"><a href="#cb67-58" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [hsig]; <span class="cf">exact</span> id</span></code></pre></div>
+<h2 id="nearest-on-the-grid-2-s-ℤ-and-below-it">Nearest on the grid
+<code>2 ^ s ℤ</code>, and below it</h2>
+<div class="sourceCode" id="cb68"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> scale_abs (x a : ℚ) (s : ℤ) : |x * <span class="dv">2</span> ^ s - a| = <span class="dv">2</span> ^ s * |x - a / <span class="dv">2</span> ^ s| := <span class="kw">by</span></span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [<span class="kw">show</span> x * <span class="dv">2</span> ^ s - a = <span class="dv">2</span> ^ s * (x - a / <span class="dv">2</span> ^ s) <span class="kw">by</span> <span class="cf">field_simp</span>, abs_mul, abs_of_pos hp]</span>
+<span id="cb68-4"><a href="#cb68-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb68-5"><a href="#cb68-5" aria-hidden="true" tabindex="-1"></a><span class="do">/-- If `M` is an integer nearest `a / 2 ^ s`, ties to even, and every binary64 value not on the</span></span>
+<span id="cb68-6"><a href="#cb68-6" aria-hidden="true" tabindex="-1"></a><span class="do">grid `2 ^ s ℤ` lies below `2 ^ (s + 52) ≤ a`, then `M * 2 ^ s` is a binary64 value nearest `a`,</span></span>
+<span id="cb68-7"><a href="#cb68-7" aria-hidden="true" tabindex="-1"></a><span class="do">and a different binary64 value equally near forces `M` even. -/</span></span>
+<span id="cb68-8"><a href="#cb68-8" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> grid_nearest (a : ℚ) (s : ℤ) (M : ℕ)</span>
+<span id="cb68-9"><a href="#cb68-9" aria-hidden="true" tabindex="-1"></a>    (hnear : ∀ k : ℤ, |(M : ℚ) - a / <span class="dv">2</span> ^ s| ≤ |(k : ℚ) - a / <span class="dv">2</span> ^ s|)</span>
+<span id="cb68-10"><a href="#cb68-10" aria-hidden="true" tabindex="-1"></a>    (htie : ∀ k : ℤ, |(k : ℚ) - a / <span class="dv">2</span> ^ s| = |(M : ℚ) - a / <span class="dv">2</span> ^ s| → k ≠ M → Even M)</span>
+<span id="cb68-11"><a href="#cb68-11" aria-hidden="true" tabindex="-1"></a>    (hoff : -<span class="dv">1074</span> &lt; s → (<span class="dv">2</span> : ℚ) ^ (s + <span class="dv">52</span>) ≤ a) (y : ℚ) (hy : Representable y) :</span>
+<span id="cb68-12"><a href="#cb68-12" aria-hidden="true" tabindex="-1"></a>    |(M : ℚ) * <span class="dv">2</span> ^ s - a| ≤ |y - a| ∧</span>
+<span id="cb68-13"><a href="#cb68-13" aria-hidden="true" tabindex="-1"></a>      (|y - a| = |(M : ℚ) * <span class="dv">2</span> ^ s - a| → y ≠ (M : ℚ) * <span class="dv">2</span> ^ s → Even M) := <span class="kw">by</span></span>
+<span id="cb68-14"><a href="#cb68-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨m, k, hm, hk, rfl⟩ := hy</span>
+<span id="cb68-15"><a href="#cb68-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb68-16"><a href="#cb68-16" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hks : s ≤ k</span>
+<span id="cb68-17"><a href="#cb68-17" aria-hidden="true" tabindex="-1"></a>  · set K : ℤ := ((m * <span class="dv">2</span> ^ (k - s).toNat : ℕ) : ℤ) <span class="kw">with</span> hK</span>
+<span id="cb68-18"><a href="#cb68-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hyK : (m : ℚ) * <span class="dv">2</span> ^ k = (K : ℚ) * <span class="dv">2</span> ^ s := <span class="kw">by</span></span>
+<span id="cb68-19"><a href="#cb68-19" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hK]; <span class="cf">push_cast</span></span>
+<span id="cb68-20"><a href="#cb68-20" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [← zpow_natCast, Int.toNat_of_nonneg (<span class="kw">by</span> <span class="cf">omega</span>), mul_assoc, ← zpow_add₀ two_ne_zero]</span>
+<span id="cb68-21"><a href="#cb68-21" aria-hidden="true" tabindex="-1"></a>      <span class="cf">congr</span> <span class="dv">2</span>; <span class="cf">ring</span></span>
+<span id="cb68-22"><a href="#cb68-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hyK, scale_abs, scale_abs]</span>
+<span id="cb68-23"><a href="#cb68-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨mul_le_mul_of_nonneg_left (hnear K) hp.le, <span class="kw">fun</span> h hne =&gt; ?_⟩</span>
+<span id="cb68-24"><a href="#cb68-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h&#39; := mul_left_cancel₀ hp.ne&#39; h</span>
+<span id="cb68-25"><a href="#cb68-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> htie K h&#39; <span class="kw">fun</span> hKM =&gt; hne ?_</span>
+<span id="cb68-26"><a href="#cb68-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hKM]; <span class="cf">push_cast</span>; <span class="cf">rfl</span></span>
+<span id="cb68-27"><a href="#cb68-27" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> hs : -<span class="dv">1074</span> &lt; s := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb68-28"><a href="#cb68-28" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> ha := hoff hs</span>
+<span id="cb68-29"><a href="#cb68-29" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hy1 : (m : ℚ) * <span class="dv">2</span> ^ k &lt; <span class="dv">2</span> ^ (s + <span class="dv">52</span>) := <span class="kw">by</span></span>
+<span id="cb68-30"><a href="#cb68-30" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hm&#39; : (m : ℚ) &lt; <span class="dv">2</span> ^ (<span class="dv">53</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb68-31"><a href="#cb68-31" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ (<span class="dv">53</span> : ℤ) = <span class="dv">2</span> ^ (<span class="dv">53</span> : ℕ) <span class="kw">from</span> zpow_natCast <span class="dv">2</span> <span class="dv">53</span>]; exact_mod_cast hm</span>
+<span id="cb68-32"><a href="#cb68-32" aria-hidden="true" tabindex="-1"></a>      <span class="kw">calc</span> (m : ℚ) * <span class="dv">2</span> ^ k &lt; <span class="dv">2</span> ^ (<span class="dv">53</span> : ℤ) * <span class="dv">2</span> ^ k := <span class="kw">by</span></span>
+<span id="cb68-33"><a href="#cb68-33" aria-hidden="true" tabindex="-1"></a>              <span class="cf">exact</span> mul_lt_mul_of_pos_right hm&#39; (<span class="kw">by</span> <span class="cf">positivity</span>)</span>
+<span id="cb68-34"><a href="#cb68-34" aria-hidden="true" tabindex="-1"></a>        _ = <span class="dv">2</span> ^ (k + <span class="dv">53</span>) := <span class="kw">by</span> <span class="cf">rw</span> [← zpow_add₀ two_ne_zero]; ring_nf</span>
+<span id="cb68-35"><a href="#cb68-35" aria-hidden="true" tabindex="-1"></a>        _ ≤ <span class="dv">2</span> ^ (s + <span class="dv">52</span>) := zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb68-36"><a href="#cb68-36" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hy0 : (<span class="dv">0</span> : ℚ) ≤ (m : ℚ) * <span class="dv">2</span> ^ k := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb68-37"><a href="#cb68-37" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hgrid := hnear (<span class="dv">2</span> ^ <span class="dv">52</span> : ℕ)</span>
+<span id="cb68-38"><a href="#cb68-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← mul_le_mul_iff_of_pos_left hp, ← scale_abs, ← scale_abs] <span class="kw">at</span> hgrid</span>
+<span id="cb68-39"><a href="#cb68-39" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h52 : (((<span class="dv">2</span> ^ <span class="dv">52</span> : ℕ) : ℤ) : ℚ) * <span class="dv">2</span> ^ s = <span class="dv">2</span> ^ (s + <span class="dv">52</span>) := <span class="kw">by</span></span>
+<span id="cb68-40"><a href="#cb68-40" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [zpow_add₀ two_ne_zero]; <span class="cf">norm_num</span>; <span class="cf">ring</span></span>
+<span id="cb68-41"><a href="#cb68-41" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [h52, abs_of_nonpos (<span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ (s + <span class="dv">52</span>) - a ≤ <span class="dv">0</span> <span class="kw">by</span> <span class="cf">linarith</span>)] <span class="kw">at</span> hgrid</span>
+<span id="cb68-42"><a href="#cb68-42" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hstrict : |(M : ℚ) * <span class="dv">2</span> ^ s - a| &lt; |(m : ℚ) * <span class="dv">2</span> ^ k - a| := <span class="kw">by</span></span>
+<span id="cb68-43"><a href="#cb68-43" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [abs_of_nonpos (<span class="kw">by</span> <span class="cf">linarith</span> : (m : ℚ) * <span class="dv">2</span> ^ k - a ≤ <span class="dv">0</span>)]; <span class="cf">linarith</span></span>
+<span id="cb68-44"><a href="#cb68-44" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ⟨hstrict.le, <span class="kw">fun</span> h _ =&gt; absurd h hstrict.ne&#39;⟩</span></code></pre></div>
+<h2 id="the-magnitude-word">The magnitude word</h2>
+<div class="sourceCode" id="cb69"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> exponentiation.threshold <span class="dv">1100</span> <span class="kw">in</span></span>
+<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The result before the sign bits, on the magnitude `n / d`: the infinity exactly from</span></span>
+<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a><span class="do">`overflowThreshold` on, and otherwise a finite word nearest `n / d` among the binary64</span></span>
+<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a><span class="do">magnitudes, ties to even. -/</span></span>
+<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> magnitudeWord_spec (n d : ℕ) (hn : <span class="dv">0</span> &lt; n) (hd : <span class="dv">0</span> &lt; d) :</span>
+<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a>    magnitudeWord n d &lt; <span class="dv">2</span> ^ <span class="dv">63</span> ∧</span>
+<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a>    (overflowThreshold ≤ (n : ℚ) / d → magnitudeWord n d = <span class="dv">2047</span> * <span class="dv">2</span> ^ <span class="dv">52</span>) ∧</span>
+<span id="cb69-8"><a href="#cb69-8" aria-hidden="true" tabindex="-1"></a>    ((n : ℚ) / d &lt; overflowThreshold → field (magnitudeWord n d) ≠ <span class="dv">2047</span> ∧</span>
+<span id="cb69-9"><a href="#cb69-9" aria-hidden="true" tabindex="-1"></a>      (∀ y, Representable y →</span>
+<span id="cb69-10"><a href="#cb69-10" aria-hidden="true" tabindex="-1"></a>        |magnitude (magnitudeWord n d) - (n : ℚ) / d| ≤ |y - (n : ℚ) / d|) ∧</span>
+<span id="cb69-11"><a href="#cb69-11" aria-hidden="true" tabindex="-1"></a>      (∀ y, Representable y →</span>
+<span id="cb69-12"><a href="#cb69-12" aria-hidden="true" tabindex="-1"></a>        |y - (n : ℚ) / d| = |magnitude (magnitudeWord n d) - (n : ℚ) / d| →</span>
+<span id="cb69-13"><a href="#cb69-13" aria-hidden="true" tabindex="-1"></a>        y ≠ magnitude (magnitudeWord n d) → Even (significand (magnitudeWord n d)))) := <span class="kw">by</span></span>
+<span id="cb69-14"><a href="#cb69-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hE1, hE2⟩ := rationalExponent_spec n d hn hd</span>
+<span id="cb69-15"><a href="#cb69-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hapos : (<span class="dv">0</span> : ℚ) &lt; (n : ℚ) / d := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb69-16"><a href="#cb69-16" aria-hidden="true" tabindex="-1"></a>  set a : ℚ := (n : ℚ) / d <span class="kw">with</span> ha</span>
+<span id="cb69-17"><a href="#cb69-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr : overflowThreshold = (<span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span>) * <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb69-18"><a href="#cb69-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">norm_num</span> [overflowThreshold]</span>
+<span id="cb69-19"><a href="#cb69-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr2 : (<span class="dv">2</span> : ℚ) ^ (<span class="dv">1023</span> : ℤ) &lt; overflowThreshold := <span class="kw">by</span> <span class="cf">rw</span> [hthr]; <span class="cf">norm_num</span></span>
+<span id="cb69-20"><a href="#cb69-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> magnitudeWord</span>
+<span id="cb69-21"><a href="#cb69-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> only []</span>
+<span id="cb69-22"><a href="#cb69-22" aria-hidden="true" tabindex="-1"></a>  set E := rationalExponent n d <span class="kw">with</span> hEdef</span>
+<span id="cb69-23"><a href="#cb69-23" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> h1 : E &gt; <span class="dv">1023</span></span>
+<span id="cb69-24"><a href="#cb69-24" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_pos h1]</span>
+<span id="cb69-25"><a href="#cb69-25" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h1024 : (<span class="dv">2</span> : ℚ) ^ (<span class="dv">1024</span> : ℤ) ≤ a :=</span>
+<span id="cb69-26"><a href="#cb69-26" aria-hidden="true" tabindex="-1"></a>      le_trans (zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)) hE1</span>
+<span id="cb69-27"><a href="#cb69-27" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hlt : ¬ a &lt; overflowThreshold := <span class="kw">by</span></span>
+<span id="cb69-28"><a href="#cb69-28" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hthr]; <span class="cf">norm_num</span> <span class="kw">at</span> h1024 ⊢; <span class="cf">linarith</span></span>
+<span id="cb69-29"><a href="#cb69-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ⟨by <span class="cf">norm_num</span>, <span class="kw">fun</span> _ =&gt; <span class="kw">by</span> <span class="cf">norm_num</span>, <span class="kw">fun</span> h =&gt; absurd h hlt⟩</span>
+<span id="cb69-30"><a href="#cb69-30" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [if_neg h1]</span>
+<span id="cb69-31"><a href="#cb69-31" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> h2 : E &lt; -<span class="dv">1075</span></span>
+<span id="cb69-32"><a href="#cb69-32" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_pos h2]</span>
+<span id="cb69-33"><a href="#cb69-33" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hsmall : a &lt; <span class="dv">2</span> ^ (-<span class="dv">1075</span> : ℤ) :=</span>
+<span id="cb69-34"><a href="#cb69-34" aria-hidden="true" tabindex="-1"></a>      lt_of_lt_of_le hE2 (zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>))</span>
+<span id="cb69-35"><a href="#cb69-35" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hm0 : magnitude <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">rw</span> [magnitude_eq]; <span class="cf">simp</span> [significand, fraction, field]</span>
+<span id="cb69-36"><a href="#cb69-36" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hlt : a &lt; overflowThreshold := <span class="kw">by</span></span>
+<span id="cb69-37"><a href="#cb69-37" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1075</span> : ℤ) &lt; <span class="dv">2</span> ^ (<span class="dv">1023</span> : ℤ) :=</span>
+<span id="cb69-38"><a href="#cb69-38" aria-hidden="true" tabindex="-1"></a>        zpow_lt_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb69-39"><a href="#cb69-39" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> lt_trans hsmall (lt_trans this hthr2)</span>
+<span id="cb69-40"><a href="#cb69-40" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨by <span class="cf">norm_num</span>, <span class="kw">fun</span> h =&gt; absurd h (not_le.mpr hlt), <span class="kw">fun</span> _ =&gt; ⟨by <span class="cf">simp</span> [field], ?_,</span>
+<span id="cb69-41"><a href="#cb69-41" aria-hidden="true" tabindex="-1"></a>      <span class="kw">fun</span> _ _ _ _ =&gt; <span class="kw">by</span> <span class="cf">simp</span> [significand, field, fraction]⟩⟩</span>
+<span id="cb69-42"><a href="#cb69-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> y ⟨m, k, hm, hk, hy⟩</span>
+<span id="cb69-43"><a href="#cb69-43" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hm0, zero_sub, abs_neg, abs_of_pos hapos]</span>
+<span id="cb69-44"><a href="#cb69-44" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> Nat.eq_zero_or_pos m <span class="kw">with</span> h0 | hpos</span>
+<span id="cb69-45"><a href="#cb69-45" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [hy, h0]; <span class="cf">simp</span> [abs_of_pos hapos]</span>
+<span id="cb69-46"><a href="#cb69-46" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> hk&#39; : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1074</span> : ℤ) ≤ <span class="dv">2</span> ^ k := zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) hk</span>
+<span id="cb69-47"><a href="#cb69-47" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hm1 : (<span class="dv">1</span> : ℚ) ≤ m := <span class="kw">by</span> exact_mod_cast hpos</span>
+<span id="cb69-48"><a href="#cb69-48" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hy1 : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1074</span> : ℤ) ≤ y := <span class="kw">by</span></span>
+<span id="cb69-49"><a href="#cb69-49" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [hy]; nlinarith [<span class="kw">show</span> (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ k <span class="kw">by</span> <span class="cf">positivity</span>]</span>
+<span id="cb69-50"><a href="#cb69-50" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> h2&#39; : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1074</span> : ℤ) = <span class="dv">2</span> * <span class="dv">2</span> ^ (-<span class="dv">1075</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb69-51"><a href="#cb69-51" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [<span class="kw">show</span> (-<span class="dv">1074</span> : ℤ) = <span class="dv">1</span> + (-<span class="dv">1075</span>) <span class="kw">by</span> <span class="cf">norm_num</span>, zpow_add₀ two_ne_zero, zpow_one]</span>
+<span id="cb69-52"><a href="#cb69-52" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [abs_of_nonneg (<span class="kw">by</span> <span class="cf">linarith</span>)]; <span class="cf">linarith</span></span>
+<span id="cb69-53"><a href="#cb69-53" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [if_neg h2]</span>
+<span id="cb69-54"><a href="#cb69-54" aria-hidden="true" tabindex="-1"></a>  set s : ℤ := max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) <span class="kw">with</span> hs</span>
+<span id="cb69-55"><a href="#cb69-55" aria-hidden="true" tabindex="-1"></a>  set N := (<span class="kw">if</span> s &lt; <span class="dv">0</span> <span class="kw">then</span> n &lt;&lt;&lt; (-s).toNat <span class="kw">else</span> n) <span class="kw">with</span> hN</span>
+<span id="cb69-56"><a href="#cb69-56" aria-hidden="true" tabindex="-1"></a>  set D := (<span class="kw">if</span> s &gt; <span class="dv">0</span> <span class="kw">then</span> d &lt;&lt;&lt; s.toNat <span class="kw">else</span> d) <span class="kw">with</span> hD</span>
+<span id="cb69-57"><a href="#cb69-57" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hDpos : <span class="dv">0</span> &lt; D := <span class="kw">by</span></span>
+<span id="cb69-58"><a href="#cb69-58" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hD]; <span class="cf">split_ifs</span></span>
+<span id="cb69-59"><a href="#cb69-59" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [Nat.shiftLeft_eq]; <span class="cf">positivity</span></span>
+<span id="cb69-60"><a href="#cb69-60" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">exact</span> hd</span>
+<span id="cb69-61"><a href="#cb69-61" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb69-62"><a href="#cb69-62" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdq : (<span class="dv">0</span> : ℚ) &lt; d := <span class="kw">by</span> exact_mod_cast hd</span>
+<span id="cb69-63"><a href="#cb69-63" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> ht : (N : ℚ) / D = a / <span class="dv">2</span> ^ s := <span class="kw">by</span></span>
+<span id="cb69-64"><a href="#cb69-64" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hN, hD, ha]</span>
+<span id="cb69-65"><a href="#cb69-65" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> lt_trichotomy s <span class="dv">0</span> <span class="kw">with</span> h | h | h</span>
+<span id="cb69-66"><a href="#cb69-66" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [if_pos h, if_neg (<span class="kw">by</span> <span class="cf">omega</span>), Nat.shiftLeft_eq]; <span class="cf">push_cast</span></span>
+<span id="cb69-67"><a href="#cb69-67" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [← zpow_natCast, Int.toNat_of_nonneg (<span class="kw">by</span> <span class="cf">omega</span>), zpow_neg]; <span class="cf">field_simp</span></span>
+<span id="cb69-68"><a href="#cb69-68" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [h]; <span class="cf">simp</span></span>
+<span id="cb69-69"><a href="#cb69-69" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [if_neg (<span class="kw">by</span> <span class="cf">omega</span>), if_pos h, Nat.shiftLeft_eq]; <span class="cf">push_cast</span></span>
+<span id="cb69-70"><a href="#cb69-70" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [← zpow_natCast, Int.toNat_of_nonneg (<span class="kw">by</span> <span class="cf">omega</span>)]; <span class="cf">field_simp</span></span>
+<span id="cb69-71"><a href="#cb69-71" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hDq : (<span class="dv">0</span> : ℚ) &lt; D := <span class="kw">by</span> exact_mod_cast hDpos</span>
+<span id="cb69-72"><a href="#cb69-72" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hnear, htie, hlo, hhi⟩ := roundHalfEven_spec N D hDpos</span>
+<span id="cb69-73"><a href="#cb69-73" aria-hidden="true" tabindex="-1"></a>  set M := roundHalfEven N D <span class="kw">with</span> hMdef</span>
+<span id="cb69-74"><a href="#cb69-74" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [ht] <span class="kw">at</span> hnear htie</span>
+<span id="cb69-75"><a href="#cb69-75" aria-hidden="true" tabindex="-1"></a>  set t := a / <span class="dv">2</span> ^ s <span class="kw">with</span> htdef</span>
+<span id="cb69-76"><a href="#cb69-76" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hta : a = t * <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">rw</span> [htdef]; <span class="cf">field_simp</span></span>
+<span id="cb69-77"><a href="#cb69-77" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- `t &lt; 2 ^ 53`, so `M ≤ 2 ^ 53`.</span></span>
+<span id="cb69-78"><a href="#cb69-78" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> htlt : t &lt; <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb69-79"><a href="#cb69-79" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [htdef, div_lt_iff₀ hp]</span>
+<span id="cb69-80"><a href="#cb69-80" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> a &lt; <span class="dv">2</span> ^ (E + <span class="dv">1</span>) := hE2</span>
+<span id="cb69-81"><a href="#cb69-81" aria-hidden="true" tabindex="-1"></a>      _ = <span class="dv">2</span> ^ (<span class="dv">53</span> : ℤ) * <span class="dv">2</span> ^ (E - <span class="dv">52</span>) := <span class="kw">by</span> <span class="cf">rw</span> [← zpow_add₀ two_ne_zero]; ring_nf</span>
+<span id="cb69-82"><a href="#cb69-82" aria-hidden="true" tabindex="-1"></a>      _ ≤ <span class="dv">2</span> ^ (<span class="dv">53</span> : ℤ) * <span class="dv">2</span> ^ s := <span class="kw">by</span></span>
+<span id="cb69-83"><a href="#cb69-83" aria-hidden="true" tabindex="-1"></a>          gcongr</span>
+<span id="cb69-84"><a href="#cb69-84" aria-hidden="true" tabindex="-1"></a>          · <span class="cf">norm_num</span></span>
+<span id="cb69-85"><a href="#cb69-85" aria-hidden="true" tabindex="-1"></a>          · <span class="cf">omega</span></span>
+<span id="cb69-86"><a href="#cb69-86" aria-hidden="true" tabindex="-1"></a>      _ = <span class="dv">2</span> ^ <span class="dv">53</span> * <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">norm_num</span></span>
+<span id="cb69-87"><a href="#cb69-87" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hM53 : M ≤ <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb69-88"><a href="#cb69-88" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hND : N &lt; <span class="dv">2</span> ^ <span class="dv">53</span> * D := <span class="kw">by</span></span>
+<span id="cb69-89"><a href="#cb69-89" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : (N : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">53</span> * D := <span class="kw">by</span></span>
+<span id="cb69-90"><a href="#cb69-90" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← div_lt_iff₀ hDq, ht]; <span class="cf">exact</span> htlt</span>
+<span id="cb69-91"><a href="#cb69-91" aria-hidden="true" tabindex="-1"></a>      exact_mod_cast this</span>
+<span id="cb69-92"><a href="#cb69-92" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := (Nat.div_lt_iff_lt_mul hDpos).mpr hND</span>
+<span id="cb69-93"><a href="#cb69-93" aria-hidden="true" tabindex="-1"></a>    <span class="cf">omega</span></span>
+<span id="cb69-94"><a href="#cb69-94" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hsub : M &lt; <span class="dv">2</span> ^ <span class="dv">52</span> → max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) = -<span class="dv">1074</span> := <span class="kw">by</span></span>
+<span id="cb69-95"><a href="#cb69-95" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> hM</span>
+<span id="cb69-96"><a href="#cb69-96" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_contra</span> hne</span>
+<span id="cb69-97"><a href="#cb69-97" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hsE : s = E - <span class="dv">52</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb69-98"><a href="#cb69-98" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> ht52 : (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> ≤ t := <span class="kw">by</span></span>
+<span id="cb69-99"><a href="#cb69-99" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [htdef, le_div_iff₀ hp, hsE]</span>
+<span id="cb69-100"><a href="#cb69-100" aria-hidden="true" tabindex="-1"></a>      <span class="kw">calc</span> (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> * <span class="dv">2</span> ^ (E - <span class="dv">52</span>) = <span class="dv">2</span> ^ E := <span class="kw">by</span></span>
+<span id="cb69-101"><a href="#cb69-101" aria-hidden="true" tabindex="-1"></a>            <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> = <span class="dv">2</span> ^ (<span class="dv">52</span> : ℤ) <span class="kw">by</span> <span class="cf">norm_num</span>, ← zpow_add₀ two_ne_zero]; ring_nf</span>
+<span id="cb69-102"><a href="#cb69-102" aria-hidden="true" tabindex="-1"></a>        _ ≤ a := hE1</span>
+<span id="cb69-103"><a href="#cb69-103" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hND : <span class="dv">2</span> ^ <span class="dv">52</span> * D ≤ N := <span class="kw">by</span></span>
+<span id="cb69-104"><a href="#cb69-104" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> * D ≤ N := <span class="kw">by</span></span>
+<span id="cb69-105"><a href="#cb69-105" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← le_div_iff₀ hDq, ht]; <span class="cf">exact</span> ht52</span>
+<span id="cb69-106"><a href="#cb69-106" aria-hidden="true" tabindex="-1"></a>      exact_mod_cast this</span>
+<span id="cb69-107"><a href="#cb69-107" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := Nat.div_le_div_right (c := D) hND</span>
+<span id="cb69-108"><a href="#cb69-108" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [Nat.mul_div_cancel _ hDpos] <span class="kw">at</span> this</span>
+<span id="cb69-109"><a href="#cb69-109" aria-hidden="true" tabindex="-1"></a>    <span class="cf">omega</span></span>
+<span id="cb69-110"><a href="#cb69-110" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hlt63, hover, hfin⟩ := packWord_spec M E (<span class="kw">by</span> <span class="cf">omega</span>) hM53 hsub</span>
+<span id="cb69-111"><a href="#cb69-111" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hiff : overflowThreshold ≤ a ↔ (M = <span class="dv">2</span> ^ <span class="dv">53</span> ∧ E = <span class="dv">1023</span>) := <span class="kw">by</span></span>
+<span id="cb69-112"><a href="#cb69-112" aria-hidden="true" tabindex="-1"></a>    <span class="cf">constructor</span></span>
+<span id="cb69-113"><a href="#cb69-113" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">intro</span> h</span>
+<span id="cb69-114"><a href="#cb69-114" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hE : E = <span class="dv">1023</span> := <span class="kw">by</span></span>
+<span id="cb69-115"><a href="#cb69-115" aria-hidden="true" tabindex="-1"></a>        <span class="cf">by_contra</span> hne</span>
+<span id="cb69-116"><a href="#cb69-116" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) ^ (E + <span class="dv">1</span>) ≤ <span class="dv">2</span> ^ (<span class="dv">1023</span> : ℤ) := zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb69-117"><a href="#cb69-117" aria-hidden="true" tabindex="-1"></a>        <span class="cf">linarith</span></span>
+<span id="cb69-118"><a href="#cb69-118" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hs971 : s = <span class="dv">971</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb69-119"><a href="#cb69-119" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> ht1 : <span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span> ≤ t := <span class="kw">by</span></span>
+<span id="cb69-120"><a href="#cb69-120" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [htdef, le_div_iff₀ hp, hs971]; <span class="cf">rw</span> [hthr] <span class="kw">at</span> h; <span class="cf">exact</span> h</span>
+<span id="cb69-121"><a href="#cb69-121" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> ⟨?_, hE⟩</span>
+<span id="cb69-122"><a href="#cb69-122" aria-hidden="true" tabindex="-1"></a>      <span class="cf">by_contra</span> hM</span>
+<span id="cb69-123"><a href="#cb69-123" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hM&#39; : (M : ℚ) + <span class="dv">1</span> ≤ <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb69-124"><a href="#cb69-124" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> : M + <span class="dv">1</span> ≤ <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb69-125"><a href="#cb69-125" aria-hidden="true" tabindex="-1"></a>        exact_mod_cast this</span>
+<span id="cb69-126"><a href="#cb69-126" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hk := hnear ((<span class="dv">2</span> : ℤ) ^ <span class="dv">53</span>)</span>
+<span id="cb69-127"><a href="#cb69-127" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp</span> only [Int.cast_pow, Int.cast_ofNat] <span class="kw">at</span> hk</span>
+<span id="cb69-128"><a href="#cb69-128" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [abs_of_pos (<span class="kw">show</span> (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">53</span> - t <span class="kw">by</span> <span class="cf">linarith</span>)] <span class="kw">at</span> hk</span>
+<span id="cb69-129"><a href="#cb69-129" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hge : t - M ≤ |(M : ℚ) - t| := <span class="kw">by</span> <span class="cf">rw</span> [abs_sub_comm]; <span class="cf">exact</span> le_abs_self _</span>
+<span id="cb69-130"><a href="#cb69-130" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hMeq : M + <span class="dv">1</span> = <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb69-131"><a href="#cb69-131" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> : (M : ℚ) + <span class="dv">1</span> = <span class="dv">2</span> ^ <span class="dv">53</span> := le_antisymm hM&#39; (<span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb69-132"><a href="#cb69-132" aria-hidden="true" tabindex="-1"></a>        exact_mod_cast this</span>
+<span id="cb69-133"><a href="#cb69-133" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> heq : |(((<span class="dv">2</span> : ℤ) ^ <span class="dv">53</span> : ℤ) : ℚ) - t| = |(M : ℚ) - t| := <span class="kw">by</span></span>
+<span id="cb69-134"><a href="#cb69-134" aria-hidden="true" tabindex="-1"></a>        <span class="cf">simp</span> only [Int.cast_pow, Int.cast_ofNat]</span>
+<span id="cb69-135"><a href="#cb69-135" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [abs_of_pos (<span class="kw">show</span> (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">53</span> - t <span class="kw">by</span> <span class="cf">linarith</span>)]</span>
+<span id="cb69-136"><a href="#cb69-136" aria-hidden="true" tabindex="-1"></a>        <span class="cf">apply</span> le_antisymm _ hk</span>
+<span id="cb69-137"><a href="#cb69-137" aria-hidden="true" tabindex="-1"></a>        <span class="cf">linarith</span></span>
+<span id="cb69-138"><a href="#cb69-138" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hne : (<span class="dv">2</span> : ℤ) ^ <span class="dv">53</span> ≠ (M : ℤ) := <span class="kw">by</span></span>
+<span id="cb69-139"><a href="#cb69-139" aria-hidden="true" tabindex="-1"></a>        <span class="cf">intro</span> h&#39;; <span class="kw">have</span> : ((M : ℕ) : ℤ) + <span class="dv">1</span> = <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span> exact_mod_cast hMeq</span>
+<span id="cb69-140"><a href="#cb69-140" aria-hidden="true" tabindex="-1"></a>        <span class="cf">omega</span></span>
+<span id="cb69-141"><a href="#cb69-141" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hev := htie _ heq hne</span>
+<span id="cb69-142"><a href="#cb69-142" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : M = <span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb69-143"><a href="#cb69-143" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [this] <span class="kw">at</span> hev</span>
+<span id="cb69-144"><a href="#cb69-144" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> absurd hev (<span class="kw">by</span> <span class="cf">decide</span>)</span>
+<span id="cb69-145"><a href="#cb69-145" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rintro</span> ⟨hM, hE⟩</span>
+<span id="cb69-146"><a href="#cb69-146" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hs971 : s = <span class="dv">971</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb69-147"><a href="#cb69-147" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hk := hnear ((<span class="dv">2</span> : ℤ) ^ <span class="dv">53</span> - <span class="dv">1</span>)</span>
+<span id="cb69-148"><a href="#cb69-148" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hM] <span class="kw">at</span> hk</span>
+<span id="cb69-149"><a href="#cb69-149" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp</span> only [Int.cast_sub, Int.cast_pow, Int.cast_ofNat, Int.cast_one, Nat.cast_pow,</span>
+<span id="cb69-150"><a href="#cb69-150" aria-hidden="true" tabindex="-1"></a>        Nat.cast_ofNat] <span class="kw">at</span> hk</span>
+<span id="cb69-151"><a href="#cb69-151" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [abs_of_pos (<span class="kw">show</span> (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">53</span> - t <span class="kw">by</span> <span class="cf">linarith</span>)] <span class="kw">at</span> hk</span>
+<span id="cb69-152"><a href="#cb69-152" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> ht1 : <span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span> ≤ t := <span class="kw">by</span></span>
+<span id="cb69-153"><a href="#cb69-153" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rcases</span> le_abs.mp hk <span class="kw">with</span> h | h</span>
+<span id="cb69-154"><a href="#cb69-154" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">linarith</span></span>
+<span id="cb69-155"><a href="#cb69-155" aria-hidden="true" tabindex="-1"></a>        · <span class="cf">linarith</span></span>
+<span id="cb69-156"><a href="#cb69-156" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hthr, hta, hs971]</span>
+<span id="cb69-157"><a href="#cb69-157" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> mul_le_mul_of_nonneg_right ht1 (<span class="kw">by</span> <span class="cf">positivity</span>)</span>
+<span id="cb69-158"><a href="#cb69-158" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨hlt63, <span class="kw">fun</span> h =&gt; hover (hiff.mp h), <span class="kw">fun</span> h =&gt; ?_⟩</span>
+<span id="cb69-159"><a href="#cb69-159" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hno : ¬(M = <span class="dv">2</span> ^ <span class="dv">53</span> ∧ E = <span class="dv">1023</span>) := <span class="kw">fun</span> h&#39; =&gt; absurd (hiff.mpr h&#39;) (not_le.mpr h)</span>
+<span id="cb69-160"><a href="#cb69-160" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hf, hmag, heven⟩ := hfin hno</span>
+<span id="cb69-161"><a href="#cb69-161" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hoff : -<span class="dv">1074</span> &lt; s → (<span class="dv">2</span> : ℚ) ^ (s + <span class="dv">52</span>) ≤ a := <span class="kw">fun</span> h&#39; =&gt; <span class="kw">by</span></span>
+<span id="cb69-162"><a href="#cb69-162" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [<span class="kw">show</span> s + <span class="dv">52</span> = E <span class="kw">by</span> <span class="cf">omega</span>]; <span class="cf">exact</span> hE1</span>
+<span id="cb69-163"><a href="#cb69-163" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨hf, <span class="kw">fun</span> y hy =&gt; ?_, <span class="kw">fun</span> y hy htie&#39; hne =&gt; ?_⟩</span>
+<span id="cb69-164"><a href="#cb69-164" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [hmag]; <span class="cf">exact</span> (grid_nearest a s M hnear htie hoff y hy).<span class="dv">1</span></span>
+<span id="cb69-165"><a href="#cb69-165" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [hmag] <span class="kw">at</span> htie&#39; hne</span>
+<span id="cb69-166"><a href="#cb69-166" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> heven ((grid_nearest a s M hnear htie hoff y hy).<span class="dv">2</span> htie&#39; hne)</span></code></pre></div>
+<h2 id="the-sign">The sign</h2>
+<div class="sourceCode" id="cb70"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> signed_word (P : <span class="kw">Prop</span>) [Decidable P] (w : ℕ) (hw : w &lt; <span class="dv">2</span> ^ <span class="dv">63</span>) :</span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a>    ((<span class="kw">if</span> P <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| w) &lt; <span class="dv">2</span> ^ <span class="dv">64</span> ∧</span>
+<span id="cb70-3"><a href="#cb70-3" aria-hidden="true" tabindex="-1"></a>    signBit ((<span class="kw">if</span> P <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| w) = <span class="cf">decide</span> P ∧</span>
+<span id="cb70-4"><a href="#cb70-4" aria-hidden="true" tabindex="-1"></a>    field ((<span class="kw">if</span> P <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| w) = field w ∧</span>
+<span id="cb70-5"><a href="#cb70-5" aria-hidden="true" tabindex="-1"></a>    fraction ((<span class="kw">if</span> P <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| w) = fraction w ∧</span>
+<span id="cb70-6"><a href="#cb70-6" aria-hidden="true" tabindex="-1"></a>    significand ((<span class="kw">if</span> P <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| w) = significand w ∧</span>
+<span id="cb70-7"><a href="#cb70-7" aria-hidden="true" tabindex="-1"></a>    value ((<span class="kw">if</span> P <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| w) =</span>
+<span id="cb70-8"><a href="#cb70-8" aria-hidden="true" tabindex="-1"></a>      <span class="kw">if</span> P <span class="kw">then</span> -magnitude w <span class="kw">else</span> magnitude w := <span class="kw">by</span></span>
+<span id="cb70-9"><a href="#cb70-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hP : P</span>
+<span id="cb70-10"><a href="#cb70-10" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_pos hP, sign_or w hw]</span>
+<span id="cb70-11"><a href="#cb70-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h1 := field_high w</span>
+<span id="cb70-12"><a href="#cb70-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h2 := fraction_high w</span>
+<span id="cb70-13"><a href="#cb70-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨by <span class="cf">omega</span>, <span class="kw">by</span> <span class="cf">rw</span> [signBit_high w hw]; <span class="cf">simp</span> [hP], h1, h2,</span>
+<span id="cb70-14"><a href="#cb70-14" aria-hidden="true" tabindex="-1"></a>      <span class="kw">by</span> <span class="cf">simp</span> only [significand, h1, h2], ?_⟩</span>
+<span id="cb70-15"><a href="#cb70-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [value, signBit_high w hw, magnitude, h1, h2, if_pos hP, ↓reduceIte]</span>
+<span id="cb70-16"><a href="#cb70-16" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_neg hP, Nat.zero_or]</span>
+<span id="cb70-17"><a href="#cb70-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨by <span class="cf">omega</span>, <span class="kw">by</span> <span class="cf">simp</span> [signBit_low w hw, hP], <span class="cf">rfl</span>, <span class="cf">rfl</span>, <span class="cf">rfl</span>, ?_⟩</span>
+<span id="cb70-18"><a href="#cb70-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> [value, signBit_low w hw, hP]</span>
+<span id="cb70-19"><a href="#cb70-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb70-20"><a href="#cb70-20" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> abs_num_div_den (q : ℚ) : ((q.num.natAbs : ℕ) : ℚ) / (q.den : ℚ) = |q| := <span class="kw">by</span></span>
+<span id="cb70-21"><a href="#cb70-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h := Rat.num_div_den q</span>
+<span id="cb70-22"><a href="#cb70-22" aria-hidden="true" tabindex="-1"></a>  conv_rhs =&gt; <span class="cf">rw</span> [← h]</span>
+<span id="cb70-23"><a href="#cb70-23" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [abs_div, Nat.abs_cast, Nat.cast_natAbs, Int.cast_abs]</span></code></pre></div>
+<h2 id="correct-rounding">Correct rounding</h2>
+<div class="sourceCode" id="cb71"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Correct rounding.** For every rational `q`, the word `_nearest_binary64(q)` computes is the</span></span>
+<span id="cb71-2"><a href="#cb71-2" aria-hidden="true" tabindex="-1"></a><span class="do">IEEE 754 binary64 round-to-nearest-ties-to-even of `q`, overflow and signed zero included. -/</span></span>
+<span id="cb71-3"><a href="#cb71-3" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_roundsTo (q : ℚ) : RoundsTo q (nearestBinary64 q) := <span class="kw">by</span></span>
+<span id="cb71-4"><a href="#cb71-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr : (<span class="dv">0</span> : ℚ) &lt; overflowThreshold :=</span>
+<span id="cb71-5"><a href="#cb71-5" aria-hidden="true" tabindex="-1"></a>    sub_pos.mpr (pow_lt_pow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>))</span>
+<span id="cb71-6"><a href="#cb71-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hq : q = <span class="dv">0</span></span>
+<span id="cb71-7"><a href="#cb71-7" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">subst</span> hq</span>
+<span id="cb71-8"><a href="#cb71-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [nearestBinary64_zero]</span>
+<span id="cb71-9"><a href="#cb71-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hf : field <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">simp</span> [field]</span>
+<span id="cb71-10"><a href="#cb71-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hm0 : magnitude <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span></span>
+<span id="cb71-11"><a href="#cb71-11" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [magnitude_eq]</span>
+<span id="cb71-12"><a href="#cb71-12" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp</span> only [significand, fraction, field, Nat.zero_div, Nat.zero_mod, ↓reduceIte,</span>
+<span id="cb71-13"><a href="#cb71-13" aria-hidden="true" tabindex="-1"></a>        Nat.cast_zero, zero_mul]</span>
+<span id="cb71-14"><a href="#cb71-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hv : value <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">unfold</span> value; <span class="cf">rw</span> [hm0]; <span class="cf">simp</span></span>
+<span id="cb71-15"><a href="#cb71-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨by <span class="cf">norm_num</span>, <span class="kw">fun</span> h =&gt; <span class="kw">by</span> <span class="cf">simp</span> <span class="kw">at</span> h; <span class="cf">linarith</span>, <span class="kw">fun</span> _ =&gt; <span class="kw">by</span> <span class="cf">rw</span> [hf]; <span class="cf">norm_num</span>,</span>
+<span id="cb71-16"><a href="#cb71-16" aria-hidden="true" tabindex="-1"></a>      <span class="kw">fun</span> _ =&gt; <span class="kw">by</span> <span class="cf">simp</span> [signBit], <span class="kw">fun</span> _ w&#39; _ =&gt; <span class="kw">by</span> <span class="cf">rw</span> [hv]; <span class="cf">simp</span>, <span class="kw">fun</span> _ _ _ _ _ =&gt; ?_⟩</span>
+<span id="cb71-17"><a href="#cb71-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> [significand, hf, fraction]</span>
+<span id="cb71-18"><a href="#cb71-18" aria-hidden="true" tabindex="-1"></a>  set n := q.num.natAbs <span class="kw">with</span> hn</span>
+<span id="cb71-19"><a href="#cb71-19" aria-hidden="true" tabindex="-1"></a>  set d := q.den <span class="kw">with</span> hd</span>
+<span id="cb71-20"><a href="#cb71-20" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hn0 : <span class="dv">0</span> &lt; n := Int.natAbs_pos.mpr (Rat.num_ne_zero.mpr hq)</span>
+<span id="cb71-21"><a href="#cb71-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hd0 : <span class="dv">0</span> &lt; d := q.den_pos</span>
+<span id="cb71-22"><a href="#cb71-22" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> ha : (n : ℚ) / d = |q| := abs_num_div_den q</span>
+<span id="cb71-23"><a href="#cb71-23" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hqa : <span class="dv">0</span> &lt; |q| := abs_pos.mpr hq</span>
+<span id="cb71-24"><a href="#cb71-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hlt63, hover, hfin⟩ := magnitudeWord_spec n d hn0 hd0</span>
+<span id="cb71-25"><a href="#cb71-25" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [ha] <span class="kw">at</span> hover hfin</span>
+<span id="cb71-26"><a href="#cb71-26" aria-hidden="true" tabindex="-1"></a>  set mw := magnitudeWord n d <span class="kw">with</span> hmw</span>
+<span id="cb71-27"><a href="#cb71-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [nearestBinary64_eq q hq]</span>
+<span id="cb71-28"><a href="#cb71-28" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hW64, hWsign, hWfield, hWfrac, hWsig, hWval⟩ := signed_word (q &lt; <span class="dv">0</span>) mw hlt63</span>
+<span id="cb71-29"><a href="#cb71-29" aria-hidden="true" tabindex="-1"></a>  set W := (<span class="kw">if</span> q &lt; <span class="dv">0</span> <span class="kw">then</span> <span class="dv">0x8000000000000000</span> <span class="kw">else</span> <span class="dv">0</span>) ||| mw <span class="kw">with</span> hW</span>
+<span id="cb71-30"><a href="#cb71-30" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hr := magnitude_nonneg mw</span>
+<span id="cb71-31"><a href="#cb71-31" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- the distance of the result, and of a value of the result&#39;s magnitude and the other sign</span></span>
+<span id="cb71-32"><a href="#cb71-32" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdist : |value W - q| = abs (magnitude mw - |q|) := <span class="kw">by</span></span>
+<span id="cb71-33"><a href="#cb71-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hWval]</span>
+<span id="cb71-34"><a href="#cb71-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hneg : q &lt; <span class="dv">0</span></span>
+<span id="cb71-35"><a href="#cb71-35" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [if_pos hneg, abs_of_neg hneg, <span class="kw">show</span> -magnitude mw - q = -(magnitude mw - -q) <span class="kw">by</span> <span class="cf">ring</span>,</span>
+<span id="cb71-36"><a href="#cb71-36" aria-hidden="true" tabindex="-1"></a>        abs_neg]</span>
+<span id="cb71-37"><a href="#cb71-37" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [if_neg hneg, abs_of_nonneg (not_lt.mp hneg)]</span>
+<span id="cb71-38"><a href="#cb71-38" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hopp : ∀ v : ℚ, |v| = magnitude mw → v ≠ value W → |v - q| = magnitude mw + |q| := <span class="kw">by</span></span>
+<span id="cb71-39"><a href="#cb71-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> v hv hne</span>
+<span id="cb71-40"><a href="#cb71-40" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hWval] <span class="kw">at</span> hne</span>
+<span id="cb71-41"><a href="#cb71-41" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> (abs_eq hr).mp hv <span class="kw">with</span> h | h</span>
+<span id="cb71-42"><a href="#cb71-42" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">by_cases</span> hneg : q &lt; <span class="dv">0</span></span>
+<span id="cb71-43"><a href="#cb71-43" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [h, abs_of_neg hneg, abs_of_nonneg (<span class="kw">by</span> <span class="cf">linarith</span>)]; <span class="cf">ring</span></span>
+<span id="cb71-44"><a href="#cb71-44" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [if_neg hneg] <span class="kw">at</span> hne; <span class="cf">exact</span> absurd h hne</span>
+<span id="cb71-45"><a href="#cb71-45" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">by_cases</span> hneg : q &lt; <span class="dv">0</span></span>
+<span id="cb71-46"><a href="#cb71-46" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [if_pos hneg] <span class="kw">at</span> hne; <span class="cf">exact</span> absurd h hne</span>
+<span id="cb71-47"><a href="#cb71-47" aria-hidden="true" tabindex="-1"></a>      · <span class="kw">have</span> hq&#39; : <span class="dv">0</span> &lt; q := lt_of_le_of_ne (not_lt.mp hneg) (Ne.symm hq)</span>
+<span id="cb71-48"><a href="#cb71-48" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [h, abs_of_pos hq&#39;, abs_of_neg (<span class="kw">by</span> <span class="cf">linarith</span>)]; <span class="cf">ring</span></span>
+<span id="cb71-49"><a href="#cb71-49" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hfar : ∀ w&#39;, abs (magnitude w&#39; - |q|) ≤ |value w&#39; - q| := <span class="kw">by</span></span>
+<span id="cb71-50"><a href="#cb71-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> w&#39;</span>
+<span id="cb71-51"><a href="#cb71-51" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← abs_value w&#39;]</span>
+<span id="cb71-52"><a href="#cb71-52" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> abs_abs_sub_abs_le_abs_sub _ _</span>
+<span id="cb71-53"><a href="#cb71-53" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨hW64, <span class="kw">fun</span> h =&gt; ?_, <span class="kw">fun</span> h =&gt; ?_, <span class="kw">fun</span> _ =&gt; hWsign, <span class="kw">fun</span> h w&#39; hw&#39; =&gt; ?_,</span>
+<span id="cb71-54"><a href="#cb71-54" aria-hidden="true" tabindex="-1"></a>    <span class="kw">fun</span> h w&#39; hw&#39; htie hne =&gt; ?_⟩</span>
+<span id="cb71-55"><a href="#cb71-55" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> h1 := hover h</span>
+<span id="cb71-56"><a href="#cb71-56" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hf : field W = <span class="dv">2047</span> := <span class="kw">by</span> <span class="cf">rw</span> [hWfield, h1]; <span class="cf">exact</span> field_pack <span class="dv">2047</span> <span class="dv">0</span> (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb71-57"><a href="#cb71-57" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hfr : fraction W = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">rw</span> [hWfrac, h1]; <span class="cf">exact</span> fraction_pack <span class="dv">2047</span> <span class="dv">0</span> (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb71-58"><a href="#cb71-58" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> [decode, hf, hfr, hWsign]</span>
+<span id="cb71-59"><a href="#cb71-59" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [hWfield]; <span class="cf">exact</span> (hfin h).<span class="dv">1</span></span>
+<span id="cb71-60"><a href="#cb71-60" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [hdist]</span>
+<span id="cb71-61"><a href="#cb71-61" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> le_trans ((hfin h).<span class="fl">2.1</span> _ (magnitude_representable w&#39;)) (hfar w&#39;)</span>
+<span id="cb71-62"><a href="#cb71-62" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [hWsig]</span>
+<span id="cb71-63"><a href="#cb71-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨-, hnear, hties⟩ := hfin h</span>
+<span id="cb71-64"><a href="#cb71-64" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> heq : abs (magnitude w&#39; - |q|) = abs (magnitude mw - |q|) := <span class="kw">by</span></span>
+<span id="cb71-65"><a href="#cb71-65" aria-hidden="true" tabindex="-1"></a>      <span class="cf">apply</span> le_antisymm _ (hnear _ (magnitude_representable w&#39;))</span>
+<span id="cb71-66"><a href="#cb71-66" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [← hdist, ← htie]; <span class="cf">exact</span> hfar w&#39;</span>
+<span id="cb71-67"><a href="#cb71-67" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hm : magnitude w&#39; = magnitude mw</span>
+<span id="cb71-68"><a href="#cb71-68" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> := hopp (value w&#39;) (<span class="kw">by</span> <span class="cf">rw</span> [abs_value, hm]) hne</span>
+<span id="cb71-69"><a href="#cb71-69" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [this, hdist] <span class="kw">at</span> htie</span>
+<span id="cb71-70"><a href="#cb71-70" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exfalso</span></span>
+<span id="cb71-71"><a href="#cb71-71" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> abs_cases (magnitude mw - |q|) <span class="kw">with</span> ⟨h1, -⟩ | ⟨h1, -⟩</span>
+<span id="cb71-72"><a href="#cb71-72" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [h1] <span class="kw">at</span> htie; <span class="cf">linarith</span></span>
+<span id="cb71-73"><a href="#cb71-73" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">rw</span> [h1] <span class="kw">at</span> htie</span>
+<span id="cb71-74"><a href="#cb71-74" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> hr0 : magnitude mw = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb71-75"><a href="#cb71-75" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> hv0 : value w&#39; = <span class="dv">0</span> := <span class="kw">by</span></span>
+<span id="cb71-76"><a href="#cb71-76" aria-hidden="true" tabindex="-1"></a>          <span class="cf">rw</span> [← abs_eq_zero, abs_value, hm, hr0]</span>
+<span id="cb71-77"><a href="#cb71-77" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> hW0 : value W = <span class="dv">0</span> := <span class="kw">by</span></span>
+<span id="cb71-78"><a href="#cb71-78" aria-hidden="true" tabindex="-1"></a>          <span class="cf">rw</span> [hWval, hr0]; <span class="cf">simp</span></span>
+<span id="cb71-79"><a href="#cb71-79" aria-hidden="true" tabindex="-1"></a>        <span class="cf">exact</span> hne (hv0.trans hW0.symm)</span>
+<span id="cb71-80"><a href="#cb71-80" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">exact</span> hties _ (magnitude_representable w&#39;) heq hm</span></code></pre></div>
+<h2 id="base.decompose-and-_dyadic"><code>Base.decompose</code> and
+<code>_dyadic</code></h2>
+<div class="sourceCode" id="cb72"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> fraction_mask (w : ℕ) : w &amp;&amp;&amp; <span class="dv">0x000fffffffffffff</span> = fraction w := <span class="kw">by</span></span>
+<span id="cb72-2"><a href="#cb72-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">0x000fffffffffffff</span> : ℕ) = <span class="dv">2</span> ^ <span class="dv">52</span> - <span class="dv">1</span> <span class="kw">from</span> <span class="cf">rfl</span>, Nat.and_two_pow_sub_one_eq_mod]; <span class="cf">rfl</span></span>
+<span id="cb72-3"><a href="#cb72-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb72-4"><a href="#cb72-4" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> field_mask (w : ℕ) : (w &amp;&amp;&amp; <span class="dv">0x7ff0000000000000</span>) &gt;&gt;&gt; <span class="dv">52</span> = field w := <span class="kw">by</span></span>
+<span id="cb72-5"><a href="#cb72-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [Nat.shiftRight_and_distrib, <span class="kw">show</span> (<span class="dv">0x7ff0000000000000</span> : ℕ) &gt;&gt;&gt; <span class="dv">52</span> = <span class="dv">2</span> ^ <span class="dv">11</span> - <span class="dv">1</span> <span class="kw">from</span> <span class="cf">rfl</span>,</span>
+<span id="cb72-6"><a href="#cb72-6" aria-hidden="true" tabindex="-1"></a>    Nat.and_two_pow_sub_one_eq_mod, Nat.shiftRight_eq_div_pow]; <span class="cf">rfl</span></span>
+<span id="cb72-7"><a href="#cb72-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb72-8"><a href="#cb72-8" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_dyadic` throws exactly on the infinities and NaNs. -/</span></span>
+<span id="cb72-9"><a href="#cb72-9" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> dyadic_none_iff (w : ℕ) : dyadic w = none ↔ field w = <span class="dv">2047</span> := <span class="kw">by</span></span>
+<span id="cb72-10"><a href="#cb72-10" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> dyadic; <span class="cf">split_ifs</span> <span class="kw">with</span> h &lt;;&gt; <span class="cf">simp</span> [h]</span>
+<span id="cb72-11"><a href="#cb72-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb72-12"><a href="#cb72-12" aria-hidden="true" tabindex="-1"></a><span class="do">/-- On a finite word, `_dyadic` returns `(±significand, max field 1 - 1075)`, and `n * 2 ^ p` is</span></span>
+<span id="cb72-13"><a href="#cb72-13" aria-hidden="true" tabindex="-1"></a><span class="do">the word&#39;s value. -/</span></span>
+<span id="cb72-14"><a href="#cb72-14" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> dyadic_value (w : ℕ) (hw : field w ≠ <span class="dv">2047</span>) :</span>
+<span id="cb72-15"><a href="#cb72-15" aria-hidden="true" tabindex="-1"></a>    dyadic w = some ((significand w : ℤ) * (<span class="kw">if</span> signBit w <span class="kw">then</span> -<span class="dv">1</span> <span class="kw">else</span> <span class="dv">1</span>),</span>
+<span id="cb72-16"><a href="#cb72-16" aria-hidden="true" tabindex="-1"></a>      max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>) ∧</span>
+<span id="cb72-17"><a href="#cb72-17" aria-hidden="true" tabindex="-1"></a>    ∀ n p, dyadic w = some (n, p) → (n : ℚ) * <span class="dv">2</span> ^ p = value w := <span class="kw">by</span></span>
+<span id="cb72-18"><a href="#cb72-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdec : decompose w = ((significand w : ℤ), max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>,</span>
+<span id="cb72-19"><a href="#cb72-19" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">if</span> signBit w <span class="kw">then</span> -<span class="dv">1</span> <span class="kw">else</span> <span class="dv">1</span>)) := <span class="kw">by</span></span>
+<span id="cb72-20"><a href="#cb72-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">unfold</span> decompose</span>
+<span id="cb72-21"><a href="#cb72-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [if_neg (<span class="kw">fun</span> h =&gt; hw h<span class="fl">.1</span>), if_neg hw]</span>
+<span id="cb72-22"><a href="#cb72-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [fraction_mask, field_mask]</span>
+<span id="cb72-23"><a href="#cb72-23" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hor : fraction w ||| ((<span class="kw">if</span> field w ≠ <span class="dv">0</span> <span class="kw">then</span> <span class="dv">1</span> <span class="kw">else</span> <span class="dv">0</span>) &lt;&lt;&lt; <span class="dv">52</span>) = significand w := <span class="kw">by</span></span>
+<span id="cb72-24"><a href="#cb72-24" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [Nat.or_comm, ← Nat.shiftLeft_add_eq_or_of_lt (fraction_lt w), Nat.shiftLeft_eq]</span>
+<span id="cb72-25"><a href="#cb72-25" aria-hidden="true" tabindex="-1"></a>      <span class="cf">unfold</span> significand</span>
+<span id="cb72-26"><a href="#cb72-26" aria-hidden="true" tabindex="-1"></a>      <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">simp_all</span></span>
+<span id="cb72-27"><a href="#cb72-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hor]</span>
+<span id="cb72-28"><a href="#cb72-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">congr</span> <span class="dv">2</span></span>
+<span id="cb72-29"><a href="#cb72-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">split_ifs</span> <span class="kw">with</span> h</span>
+<span id="cb72-30"><a href="#cb72-30" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> [h]</span>
+<span id="cb72-31"><a href="#cb72-31" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span>; <span class="cf">omega</span></span>
+<span id="cb72-32"><a href="#cb72-32" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdy : dyadic w = some ((significand w : ℤ) * (<span class="kw">if</span> signBit w <span class="kw">then</span> -<span class="dv">1</span> <span class="kw">else</span> <span class="dv">1</span>),</span>
+<span id="cb72-33"><a href="#cb72-33" aria-hidden="true" tabindex="-1"></a>      max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>) := <span class="kw">by</span></span>
+<span id="cb72-34"><a href="#cb72-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">unfold</span> dyadic</span>
+<span id="cb72-35"><a href="#cb72-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [if_neg hw, hdec]</span>
+<span id="cb72-36"><a href="#cb72-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">simp</span></span>
+<span id="cb72-37"><a href="#cb72-37" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨hdy, <span class="kw">fun</span> n p h =&gt; ?_⟩</span>
+<span id="cb72-38"><a href="#cb72-38" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hdy] <span class="kw">at</span> h</span>
+<span id="cb72-39"><a href="#cb72-39" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)</span>
+<span id="cb72-40"><a href="#cb72-40" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> value</span>
+<span id="cb72-41"><a href="#cb72-41" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [magnitude_eq]</span>
+<span id="cb72-42"><a href="#cb72-42" aria-hidden="true" tabindex="-1"></a>  <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">push_cast</span> &lt;;&gt; <span class="cf">ring</span></span></code></pre></div>
+<h2 id="round-trip">Round trip</h2>
+<div class="sourceCode" id="cb73"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> word_eq (w : ℕ) (hw : w &lt; <span class="dv">2</span> ^ <span class="dv">64</span>) :</span>
+<span id="cb73-2"><a href="#cb73-2" aria-hidden="true" tabindex="-1"></a>    w = (<span class="kw">if</span> signBit w <span class="kw">then</span> <span class="dv">2</span> ^ <span class="dv">63</span> <span class="kw">else</span> <span class="dv">0</span>) + field w * <span class="dv">2</span> ^ <span class="dv">52</span> + fraction w := <span class="kw">by</span></span>
+<span id="cb73-3"><a href="#cb73-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> signBit field fraction</span>
+<span id="cb73-4"><a href="#cb73-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">norm_num</span> <span class="kw">at</span> hw ⊢</span>
+<span id="cb73-5"><a href="#cb73-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">split_ifs</span> <span class="kw">with</span> h &lt;;&gt; <span class="cf">omega</span></span>
+<span id="cb73-6"><a href="#cb73-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-7"><a href="#cb73-7" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> significand_lt (w : ℕ) : significand w &lt; <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb73-8"><a href="#cb73-8" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := fraction_lt w</span>
+<span id="cb73-9"><a href="#cb73-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> significand; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">omega</span></span>
+<span id="cb73-10"><a href="#cb73-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-11"><a href="#cb73-11" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> significand_ge (w : ℕ) (h : field w ≠ <span class="dv">0</span>) : <span class="dv">2</span> ^ <span class="dv">52</span> ≤ significand w := <span class="kw">by</span></span>
+<span id="cb73-12"><a href="#cb73-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> significand; <span class="cf">rw</span> [if_neg h]; <span class="cf">omega</span></span>
+<span id="cb73-13"><a href="#cb73-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-14"><a href="#cb73-14" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> significand_lt_of_zero (w : ℕ) (h : field w = <span class="dv">0</span>) : significand w &lt; <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span></span>
+<span id="cb73-15"><a href="#cb73-15" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> significand; <span class="cf">rw</span> [if_pos h]; <span class="cf">exact</span> fraction_lt w</span>
+<span id="cb73-16"><a href="#cb73-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-17"><a href="#cb73-17" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> <span class="kw">theorem</span> exponent_not_lt (w₁ w₂ : ℕ)</span>
+<span id="cb73-18"><a href="#cb73-18" aria-hidden="true" tabindex="-1"></a>    (h : (significand w₁ : ℚ) * <span class="dv">2</span> ^ (max (field w₁ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>) =</span>
+<span id="cb73-19"><a href="#cb73-19" aria-hidden="true" tabindex="-1"></a>      (significand w₂ : ℚ) * <span class="dv">2</span> ^ (max (field w₂ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>)) :</span>
+<span id="cb73-20"><a href="#cb73-20" aria-hidden="true" tabindex="-1"></a>    ¬ max (field w₁ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> &lt; max (field w₂ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> := <span class="kw">by</span></span>
+<span id="cb73-21"><a href="#cb73-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">intro</span> hlt</span>
+<span id="cb73-22"><a href="#cb73-22" aria-hidden="true" tabindex="-1"></a>  set e₁ := max (field w₁ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span></span>
+<span id="cb73-23"><a href="#cb73-23" aria-hidden="true" tabindex="-1"></a>  set e₂ := max (field w₂ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span></span>
+<span id="cb73-24"><a href="#cb73-24" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hf2 : field w₂ ≠ <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb73-25"><a href="#cb73-25" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hm2 : (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> ≤ significand w₂ := <span class="kw">by</span> exact_mod_cast significand_ge w₂ hf2</span>
+<span id="cb73-26"><a href="#cb73-26" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hm1 : (significand w₁ : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span> exact_mod_cast significand_lt w₁</span>
+<span id="cb73-27"><a href="#cb73-27" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ e₁ := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb73-28"><a href="#cb73-28" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h2 : (<span class="dv">2</span> : ℚ) ≤ <span class="dv">2</span> ^ (e₂ - e₁) := <span class="kw">by</span></span>
+<span id="cb73-29"><a href="#cb73-29" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> (<span class="dv">2</span> : ℚ) = <span class="dv">2</span> ^ (<span class="dv">1</span> : ℤ) := <span class="kw">by</span> <span class="cf">norm_num</span></span>
+<span id="cb73-30"><a href="#cb73-30" aria-hidden="true" tabindex="-1"></a>      _ ≤ <span class="dv">2</span> ^ (e₂ - e₁) := zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb73-31"><a href="#cb73-31" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hsplit : (<span class="dv">2</span> : ℚ) ^ e₂ = <span class="dv">2</span> ^ (e₂ - e₁) * <span class="dv">2</span> ^ e₁ := <span class="kw">by</span></span>
+<span id="cb73-32"><a href="#cb73-32" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← zpow_add₀ two_ne_zero]; ring_nf</span>
+<span id="cb73-33"><a href="#cb73-33" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hsplit, ← mul_assoc] <span class="kw">at</span> h</span>
+<span id="cb73-34"><a href="#cb73-34" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h&#39; := mul_right_cancel₀ hp.ne&#39; h</span>
+<span id="cb73-35"><a href="#cb73-35" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) * <span class="dv">2</span> ^ <span class="dv">52</span> ≤ significand w₁ := <span class="kw">by</span></span>
+<span id="cb73-36"><a href="#cb73-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [h&#39;]; nlinarith</span>
+<span id="cb73-37"><a href="#cb73-37" aria-hidden="true" tabindex="-1"></a>  <span class="cf">linarith</span></span>
+<span id="cb73-38"><a href="#cb73-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-39"><a href="#cb73-39" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> magnitude_injective (w₁ w₂ : ℕ) (h : magnitude w₁ = magnitude w₂) :</span>
+<span id="cb73-40"><a href="#cb73-40" aria-hidden="true" tabindex="-1"></a>    field w₁ = field w₂ ∧ fraction w₁ = fraction w₂ := <span class="kw">by</span></span>
+<span id="cb73-41"><a href="#cb73-41" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [magnitude_eq, magnitude_eq] <span class="kw">at</span> h</span>
+<span id="cb73-42"><a href="#cb73-42" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> he : max (field w₁ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> = max (field w₂ : ℤ) <span class="dv">1</span> - <span class="dv">1075</span> :=</span>
+<span id="cb73-43"><a href="#cb73-43" aria-hidden="true" tabindex="-1"></a>    le_antisymm (not_lt.mp (exponent_not_lt w₂ w₁ h.symm)) (not_lt.mp (exponent_not_lt w₁ w₂ h))</span>
+<span id="cb73-44"><a href="#cb73-44" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [he] <span class="kw">at</span> h</span>
+<span id="cb73-45"><a href="#cb73-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hs : significand w₁ = significand w₂ := <span class="kw">by</span></span>
+<span id="cb73-46"><a href="#cb73-46" aria-hidden="true" tabindex="-1"></a>    exact_mod_cast mul_right_cancel₀ (zpow_ne_zero _ two_ne_zero) h</span>
+<span id="cb73-47"><a href="#cb73-47" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h1 := fraction_lt w₁</span>
+<span id="cb73-48"><a href="#cb73-48" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h2 := fraction_lt w₂</span>
+<span id="cb73-49"><a href="#cb73-49" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> significand <span class="kw">at</span> hs</span>
+<span id="cb73-50"><a href="#cb73-50" aria-hidden="true" tabindex="-1"></a>  <span class="cf">split_ifs</span> <span class="kw">at</span> hs <span class="kw">with</span> hf1 hf2 hf2 &lt;;&gt; <span class="cf">omega</span></span>
+<span id="cb73-51"><a href="#cb73-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-52"><a href="#cb73-52" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> exponentiation.threshold <span class="dv">1100</span> <span class="kw">in</span></span>
+<span id="cb73-53"><a href="#cb73-53" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> magnitude_lt_threshold (w : ℕ) (hw : field w ≠ <span class="dv">2047</span>) :</span>
+<span id="cb73-54"><a href="#cb73-54" aria-hidden="true" tabindex="-1"></a>    magnitude w &lt; overflowThreshold := <span class="kw">by</span></span>
+<span id="cb73-55"><a href="#cb73-55" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr : overflowThreshold = (<span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span>) * <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb73-56"><a href="#cb73-56" aria-hidden="true" tabindex="-1"></a>    <span class="cf">norm_num</span> [overflowThreshold]</span>
+<span id="cb73-57"><a href="#cb73-57" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hf := field_lt w</span>
+<span id="cb73-58"><a href="#cb73-58" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hs : (significand w : ℚ) + <span class="dv">1</span> ≤ <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb73-59"><a href="#cb73-59" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := significand_lt w</span>
+<span id="cb73-60"><a href="#cb73-60" aria-hidden="true" tabindex="-1"></a>    exact_mod_cast this</span>
+<span id="cb73-61"><a href="#cb73-61" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> he : (<span class="dv">2</span> : ℚ) ^ (max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>) ≤ <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) :=</span>
+<span id="cb73-62"><a href="#cb73-62" aria-hidden="true" tabindex="-1"></a>    zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb73-63"><a href="#cb73-63" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb73-64"><a href="#cb73-64" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [magnitude_eq, hthr]</span>
+<span id="cb73-65"><a href="#cb73-65" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> (significand w : ℚ) * <span class="dv">2</span> ^ (max (field w : ℤ) <span class="dv">1</span> - <span class="dv">1075</span>)</span>
+<span id="cb73-66"><a href="#cb73-66" aria-hidden="true" tabindex="-1"></a>      ≤ (<span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span>) * <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb73-67"><a href="#cb73-67" aria-hidden="true" tabindex="-1"></a>        <span class="cf">apply</span> mul_le_mul (<span class="kw">by</span> <span class="cf">linarith</span>) he (<span class="kw">by</span> <span class="cf">positivity</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>)</span>
+<span id="cb73-68"><a href="#cb73-68" aria-hidden="true" tabindex="-1"></a>    _ &lt; (<span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span>) * <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb73-69"><a href="#cb73-69" aria-hidden="true" tabindex="-1"></a>        <span class="cf">apply</span> mul_lt_mul_of_pos_right (<span class="kw">by</span> <span class="cf">norm_num</span>) hp</span>
+<span id="cb73-70"><a href="#cb73-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-71"><a href="#cb73-71" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Round trip: a finite word&#39;s value rounds back to the same word, except that `-0.0` rounds</span></span>
+<span id="cb73-72"><a href="#cb73-72" aria-hidden="true" tabindex="-1"></a><span class="do">to `+0.0` (the rational `0` has no sign). -/</span></span>
+<span id="cb73-73"><a href="#cb73-73" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_value (w : ℕ) (hw : IsFinite w) :</span>
+<span id="cb73-74"><a href="#cb73-74" aria-hidden="true" tabindex="-1"></a>    nearestBinary64 (value w) = <span class="kw">if</span> value w = <span class="dv">0</span> <span class="kw">then</span> <span class="dv">0</span> <span class="kw">else</span> w := <span class="kw">by</span></span>
+<span id="cb73-75"><a href="#cb73-75" aria-hidden="true" tabindex="-1"></a>  <span class="cf">split_ifs</span> <span class="kw">with</span> h0</span>
+<span id="cb73-76"><a href="#cb73-76" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [h0, nearestBinary64_zero]</span>
+<span id="cb73-77"><a href="#cb73-77" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> R := nearestBinary64_roundsTo (value w)</span>
+<span id="cb73-78"><a href="#cb73-78" aria-hidden="true" tabindex="-1"></a>  set r := nearestBinary64 (value w) <span class="kw">with</span> hr</span>
+<span id="cb73-79"><a href="#cb73-79" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hlt : |value w| &lt; overflowThreshold := <span class="kw">by</span></span>
+<span id="cb73-80"><a href="#cb73-80" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [abs_value]; <span class="cf">exact</span> magnitude_lt_threshold w hw<span class="fl">.2</span></span>
+<span id="cb73-81"><a href="#cb73-81" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hv : value r = value w := <span class="kw">by</span></span>
+<span id="cb73-82"><a href="#cb73-82" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := R.nearest hlt w hw</span>
+<span id="cb73-83"><a href="#cb73-83" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [sub_self, abs_zero] <span class="kw">at</span> this</span>
+<span id="cb73-84"><a href="#cb73-84" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> sub_eq_zero.mp (abs_nonpos_iff.mp this)</span>
+<span id="cb73-85"><a href="#cb73-85" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hm : <span class="dv">0</span> &lt; magnitude w := <span class="kw">by</span></span>
+<span id="cb73-86"><a href="#cb73-86" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> lt_of_le_of_ne (magnitude_nonneg w) (<span class="kw">fun</span> h =&gt; h0 ?_)</span>
+<span id="cb73-87"><a href="#cb73-87" aria-hidden="true" tabindex="-1"></a>    <span class="cf">unfold</span> value; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">simp</span> [← h]</span>
+<span id="cb73-88"><a href="#cb73-88" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hsign : signBit r = signBit w := <span class="kw">by</span></span>
+<span id="cb73-89"><a href="#cb73-89" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [R.sign hlt]</span>
+<span id="cb73-90"><a href="#cb73-90" aria-hidden="true" tabindex="-1"></a>    <span class="cf">unfold</span> value</span>
+<span id="cb73-91"><a href="#cb73-91" aria-hidden="true" tabindex="-1"></a>    <span class="cf">cases</span> hb : signBit w</span>
+<span id="cb73-92"><a href="#cb73-92" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> only [Bool.false_eq_true, ↓reduceIte, decide_eq_false_iff_not, not_lt]</span>
+<span id="cb73-93"><a href="#cb73-93" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> hm.le</span>
+<span id="cb73-94"><a href="#cb73-94" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> only [↓reduceIte, decide_eq_true_eq, Left.neg_neg_iff]</span>
+<span id="cb73-95"><a href="#cb73-95" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> hm</span>
+<span id="cb73-96"><a href="#cb73-96" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hmag : magnitude r = magnitude w := <span class="kw">by</span> <span class="cf">rw</span> [← abs_value, hv, abs_value]</span>
+<span id="cb73-97"><a href="#cb73-97" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hf, hfr⟩ := magnitude_injective r w hmag</span>
+<span id="cb73-98"><a href="#cb73-98" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [word_eq r R.word, word_eq w hw<span class="fl">.1</span>, hsign, hf, hfr]</span>
+<span id="cb73-99"><a href="#cb73-99" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-100"><a href="#cb73-100" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.Binary64</span></code></pre></div>
 <!-- BayesianNetworksProofs/Roadmap.lean -->
 <h1 id="roadmap">Roadmap</h1>
-<div class="sourceCode" id="cb57"><pre
-class="sourceCode lean"><code class="sourceCode lean"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.OpenSemantics</span>
-<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.RefinementExamples</span></code></pre></div>
+<div class="sourceCode" id="cb74"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.OpenSemantics</span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.RefinementExamples</span></code></pre></div>
 <p>The former <code>osem_compose</code> hole is now proved in
 <code>Finite/OpenSemantics.lean</code>, in the default target and axiom
 audit. Its original premises are retained by a compatibility theorem.
@@ -5418,7 +6515,14 @@ numerical error contracts now have checked developments. The remaining
 boundary is implementation translation: Julia/JSON decoding and
 reference binding, concrete CliqueTrees/Bayes-ball code, ordered-array
 layout and IEEE arithmetic adapters are not established merely by those
-finite-model theorems.</p>
+finite-model theorems. Of the IEEE arithmetic, one piece is covered:
+<code>Numeric/Binary64.lean</code> proves that the transcription of
+<code>_nearest_binary64</code>, the single rounding the exact fallbacks
+of ADR 0016 apply, returns the binary64 round-to-nearest-ties-to-even of
+every rational, overflow and signed zero included. That is a theorem
+about the transcribed algorithm on mathematical integers; the
+floating-point operations of the ordinary (non-fallback) paths, and
+Julia’s execution of the rounding, remain outside.</p>
 <p>The general structural open-network category, including non-injective
 output legs, pass-through and coherent copy/discard, is now constructed
 separately in <code>CategoricalBayesianNetworks.jl/proofs/</code> (ADR

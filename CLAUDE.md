@@ -121,6 +121,11 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   `_rational_exponent` and `_nearest_binary64` (correct rounding of a `Rational{BigInt}` by integer
   arithmetic, ties to even). The one definition: `marginal`/`conditional`'s exact fallback here,
   BayesianNetworkInference's `_Dyadic` arithmetic and InfluenceDiagrams' exact DVE all use it.
+  `proofs/BayesianNetworksProofs/Numeric/Binary64.lean` transcribes all three line by line
+  (same branches and constants) and proves the transcription of `_nearest_binary64` correctly
+  rounded for every rational (`nearestBinary64_roundsTo`), `_rational_exponent` the floor of
+  `log2`, and `_dyadic` value-preserving. A change to this file must be mirrored there, and the
+  proof re-run; the proof does not read the Julia source.
 - `src/evaluation.jl`: brute-force `joint_distribution` (a `FiniteKernel` state) and
   `JointTable`, `marginal` / `conditional` with evidence, `sample` / `empirical_marginal`.
   All enumerate joint states and are capped by `max_states`. The shared internals
@@ -243,6 +248,13 @@ rewording of the README, the docs and the vignettes:
   verify a concrete Julia graph-query routine. `NumericalContracts.lean` proves
   explicit input/rounded-product error bounds and a posterior bound with positive
   evidence-mass floor; IEEE local arithmetic contracts remain assumptions to discharge.
+- `Numeric/Binary64.lean` defines binary64 words and the IEEE 754 round-to-nearest,
+  ties-to-even specification `RoundsTo` of a rational (overflow at `2^1024 - 2^970`, signed
+  zero), and proves the transcriptions of `_rational_exponent`, `_nearest_binary64` and
+  `_dyadic` correct on the full range (`rationalExponent_eq_log`, `nearestBinary64_roundsTo`,
+  `dyadic_value`, and the round trip `nearestBinary64_value`). It covers the algorithm as
+  transcribed over mathematical integers and rationals, not Julia's execution, GMP, or any
+  other floating-point operation; uniqueness and monotonicity of rounding are not proved.
 - All former Roadmap holes are discharged, and the compatibility Roadmap target also
   builds warning-free. Every headline theorem belongs in `Audit.lean`.
 

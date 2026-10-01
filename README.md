@@ -157,13 +157,28 @@ Reporting:
   input-perturbation and posterior L1 bounds with an explicit evidence-mass floor (the
   bound and its smallness condition scale with the number of joint assignments), plus a
   rounded-product bound conditional on local arithmetic contracts.
+- `Numeric/Binary64.lean` checks the correct rounding of ADR 0016 on a transcription of
+  `_rational_exponent`, `_nearest_binary64` and `_dyadic` (`src/exact_rounding.jl`) over
+  mathematical integers and rationals. `rationalExponent_eq_log` proves that
+  `_rational_exponent(n, d)` is `⌊log₂(n/d)⌋` for positive `n` and `d`.
+  `nearestBinary64_roundsTo` proves that, for every rational `q`, the transcribed
+  `_nearest_binary64` returns a 64-bit word that is the infinity of the sign of `q` exactly
+  when `|q| ≥ 2^1024 - 2^970`, and otherwise a finite word with the sign of `q`, a result of
+  zero included, whose value is at least as near `q` as the value of every finite binary64
+  word, and whose significand is even when a finite word of a different value is equally
+  near. `dyadic_value` proves that `_dyadic` returns an integer and an exponent whose value
+  is the finite word's value, and `nearestBinary64_value` that rounding the value of a finite
+  word returns that word, both zeros returning `+0.0`. These are theorems about the
+  transcribed algorithm, not about Julia's execution of it or GMP's `BigInt` arithmetic.
 - These are exact finite-model/data results, not verification of Julia execution.
   In particular, the new raw-record compiler feeds the existing `FinBayesNet`
   reduct, whose parent sets erase slot multiplicity only after diagonal evaluation.
   Full ACSet/JSON/array translation, CliqueTrees construction and IEEE arithmetic
-  remain separate. Formal forest beliefs include outside-component scalar masses;
-  Julia stores component-local beliefs and checks global mass separately. Their
-  raw arrays must not be identified without that scaling relationship.
+  remain separate; of the IEEE arithmetic, only the algorithm of the one rounding the exact
+  fallbacks apply, `_nearest_binary64` (`Numeric/Binary64.lean`), is covered. Formal forest
+  beliefs include outside-component scalar masses; Julia stores component-local beliefs
+  and checks global mass separately. Their raw arrays must not be identified without that
+  scaling relationship.
 - The general category is now constructed in `CategoricalBayesianNetworks.jl/proofs/`
   (ADR 0010): explicit arbitrary output legs, ordered repeated slots, structural
   isomorphism, pushout gluing and Mathlib category/monoidal/symmetric/copy-discard

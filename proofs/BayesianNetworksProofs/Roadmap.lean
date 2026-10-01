@@ -15,7 +15,13 @@ the actual Shafer-Shenoy collect/distribute computation, moralized-ancestral d-s
 soundness, and conditional numerical error contracts now have checked developments.
 The remaining boundary is implementation translation: Julia/JSON decoding and reference
 binding, concrete CliqueTrees/Bayes-ball code, ordered-array layout and IEEE arithmetic
-adapters are not established merely by those finite-model theorems.
+adapters are not established merely by those finite-model theorems. Of the IEEE arithmetic,
+one piece is covered: `Numeric/Binary64.lean` proves that the transcription of
+`_nearest_binary64`, the single rounding the exact fallbacks of ADR 0016 apply, returns the
+binary64 round-to-nearest-ties-to-even of every rational, overflow and signed zero included.
+That is a theorem about the transcribed algorithm on mathematical integers; the floating-point
+operations of the ordinary (non-fallback) paths, and Julia's execution of the rounding, remain
+outside.
 
 The general structural open-network category, including non-injective output legs,
 pass-through and coherent copy/discard, is now constructed separately in

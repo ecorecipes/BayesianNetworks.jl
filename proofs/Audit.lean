@@ -12,6 +12,7 @@ assert_no_sorry BayesianNetworksProofs.Junction.calibrate_correct
 assert_no_sorry BayesianNetworksProofs.Junction.queryPosterior_none_iff
 assert_no_sorry BayesianNetworksProofs.FinBayesNet.d_separation_sound
 assert_no_sorry BayesianNetworksProofs.Numerical.kernel_query_posterior_error
+assert_no_sorry BayesianNetworksProofs.Binary64.nearestBinary64_roundsTo
 
 -- Concrete data, references, repeated slots and exact conditioning.
 #print axioms BayesianNetworksProofs.Raw.decodeId_none_iff
@@ -79,6 +80,22 @@ assert_no_sorry BayesianNetworksProofs.Numerical.kernel_query_posterior_error
 #print axioms BayesianNetworksProofs.Numerical.roundedProduct_error
 #print axioms BayesianNetworksProofs.Numerical.joint_l1_error
 #print axioms BayesianNetworksProofs.Numerical.kernel_query_posterior_error
+
+-- Correct rounding to binary64: `_rational_exponent`, `_nearest_binary64` and `_dyadic` (ADR 0016).
+#print axioms BayesianNetworksProofs.Binary64.rationalExponent_spec
+#print axioms BayesianNetworksProofs.Binary64.rationalExponent_eq_log
+#print axioms BayesianNetworksProofs.Binary64.roundHalfEven_spec
+#print axioms BayesianNetworksProofs.Binary64.nearestBinary64_eq
+#print axioms BayesianNetworksProofs.Binary64.packWord_spec
+#print axioms BayesianNetworksProofs.Binary64.grid_nearest
+#print axioms BayesianNetworksProofs.Binary64.magnitudeWord_spec
+#print axioms BayesianNetworksProofs.Binary64.signed_word
+#print axioms BayesianNetworksProofs.Binary64.nearestBinary64_roundsTo
+#print axioms BayesianNetworksProofs.Binary64.dyadic_none_iff
+#print axioms BayesianNetworksProofs.Binary64.dyadic_value
+#print axioms BayesianNetworksProofs.Binary64.magnitude_injective
+#print axioms BayesianNetworksProofs.Binary64.magnitude_lt_threshold
+#print axioms BayesianNetworksProofs.Binary64.nearestBinary64_value
 
 -- Kernel-checked nonvacuity fixtures, including rational certificate checks.
 #print axioms BayesianNetworksProofs.RefinementExamples.raw_structure_checked

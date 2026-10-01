@@ -58,8 +58,9 @@ Module order (`MD_FILES` in the `Makefile`, the import order of `BayesianNetwork
 
 The current default target also includes `Finite/Assignments.lean`, `Posterior.lean`,
 `RawRecords.lean`, `ReferenceTables.lean`, `FactorMarginal.lean`, `JunctionTree.lean`,
-`ConditionalIndependence.lean`, `DSeparation.lean`, `NumericalContracts.lean` and
-`RefinementExamples.lean`. Their exact placement in the generated document is `MD_FILES`.
+`ConditionalIndependence.lean`, `DSeparation.lean`, `NumericalContracts.lean`,
+`RefinementExamples.lean` and `Numeric/Binary64.lean`. Their exact placement in the generated
+document is `MD_FILES`.
 
 ## What is formalised
 
@@ -78,6 +79,7 @@ The current default target also includes `Finite/Assignments.lean`, `Posterior.l
 | `Finite/VariableElimination.lean` | Scoped factors, bucket multiplication/summation and mechanism compilation. `eliminateAll_joint` equals the full-enumeration marginal; `eliminateAll_order_independent` permits any duplicate-free order for the same variable set. |
 | `Finite/BoundaryCases.lean` | A binary pass-through wire refutes dropping the interface-disjointness assumptions of `osem_compose_glue`, and the pass-through formula gives the true value on the same wire. Mechanism-free subset feet have at most as many outputs as inputs, exposing the missing noninjective output legs for copying feet. |
 | `Markov/Basic.lean` | Generic Mathlib `MarkovCategory` / `CopyDiscardCategory` consequences. The concrete finite instance is now in `FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean`. |
+| `Numeric/Binary64.lean` | Binary64 words and their decoding, the IEEE 754 round-to-nearest-ties-to-even specification `RoundsTo` of a rational, and transcriptions of `_rational_exponent`, `_nearest_binary64` and `_dyadic` (`src/exact_rounding.jl`, ADR 0016), proved correct on every rational: see below. |
 | `Roadmap.lean` | Remaining categorical/representation questions; no unproved declarations. |
 
 `Audit.lean` prints the axioms of every main theorem; all report a subset of
@@ -125,6 +127,22 @@ rejects unexpected output or warnings. It does not merely print an audit to the 
   contracts. It does not assert universal Float64 oracle identity. Evidence mass must have
   a positive floor; machine multiplication contracts and further rounding layers need their
   own validated adapters.
+* `Numeric/Binary64.lean` defines a 64-bit word's sign, 11-bit exponent field and 52-bit
+  fraction, its decoding (normal, subnormal, signed zero, infinity, NaN), and `RoundsTo q w`:
+  IEEE 754 round-to-nearest-ties-to-even of the rational `q` (§4.3.1, §7.4), which overflows
+  to the infinity of `q`'s sign exactly when `|q| ≥ 2^1024 - 2^970` and otherwise gives a
+  finite word with `q`'s sign, nearest `q` among the finite words, with an even significand on
+  a tie. It transcribes `_rational_exponent`, `_nearest_binary64` and `_dyadic` over `ℕ`, `ℤ`
+  and `ℚ`, with Julia's branches and constants, and proves: `rationalExponent_eq_log`
+  (`⌊log₂(n/d)⌋` for `n, d > 0`); `nearestBinary64_roundsTo` (`RoundsTo q
+  (nearestBinary64 q)` for every rational `q`, the full range, from `0 ↦ +0.0` and underflow
+  to a signed zero through subnormals, the carry into the exponent and overflow);
+  `dyadic_value` (the integer and exponent `_dyadic` returns have the finite word's value; a
+  negative zero gives `0`) and `dyadic_none_iff`; and `nearestBinary64_value` (a finite
+  word's value rounds back to that word, both zeros to `+0.0`). The theorems are about the
+  transcribed algorithm on mathematical integers; that it matches the Julia text is a
+  line-by-line reading, and Julia's execution of it and GMP's `BigInt` arithmetic are not
+  covered. Uniqueness and monotonicity of rounding are not proved.
 
 The examples check shuffled raw row IDs, repeated slots, reference-bound rational data,
 a graphical fork and three disconnected components with globally impossible evidence.

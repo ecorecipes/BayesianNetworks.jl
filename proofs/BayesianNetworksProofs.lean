@@ -22,3 +22,4 @@ import BayesianNetworksProofs.Finite.ConditionalIndependence
 import BayesianNetworksProofs.Finite.DSeparation
 import BayesianNetworksProofs.Finite.NumericalContracts
 import BayesianNetworksProofs.Finite.RefinementExamples
+import BayesianNetworksProofs.Numeric.Binary64

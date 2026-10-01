@@ -42,7 +42,7 @@ MD_FILES = \
     Finite/Assignments.md Finite/Posterior.md Finite/RawRecords.md Finite/ReferenceTables.md \
     Finite/FactorMarginal.md Finite/JunctionTree.md Finite/ConditionalIndependence.md \
     Finite/DSeparation.md Finite/NumericalContracts.md Finite/RefinementExamples.md \
-    Roadmap.md
+    Numeric/Binary64.md Roadmap.md
 
 JULIAMONO_DIR = $(abspath ../../fonts/JuliaMono)/
 # pandoc >= 3.8 (older: --highlight-style=tango); lean.xml is our syntax definition (pandoc has none)

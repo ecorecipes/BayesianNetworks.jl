@@ -50,6 +50,33 @@
         @test occursin("state_variable", sprint(showerror, validation_errors(bn)[1]))
     end
 
+    @testset "MissingAttributeError" begin
+        # An ACSet built part by part can leave a name or position unset; the checks that
+        # read them are skipped, so the result is typed, never a `MethodError`.
+        bn = reference_habitat_bn()
+        s = add_part!(bn, :State; state_variable=1, state_name=:extra)
+        @test validation_errors(bn) == [MissingAttributeError(:State, s, :state_position)]
+        @test_throws MissingAttributeError validate(bn)
+        @test !isvalid(bn; closed=true, unique_names=true)
+        @test occursin("state_position", sprint(showerror, validation_errors(bn)[1]))
+        bn = reference_habitat_bn()
+        v = add_part!(bn, :Variable; space_ref=NoRef())
+        m = add_part!(bn, :Mechanism; target=v, kernel_ref=NoRef())
+        @test validation_errors(bn; closed=true, unique_names=true) ==
+              [MissingAttributeError(:Variable, v, :variable_name),
+               MissingAttributeError(:Mechanism, m, :mechanism_name)]
+        # The reference check still runs.
+        bn = reference_habitat_bn()
+        i = add_part!(bn, :Input; input_mechanism=1)
+        @test validation_errors(bn) ==
+              [MissingAttributeError(:Input, i, :input_position),
+               DanglingReferenceError(:Input, i, :input_variable, 0)]
+        # An unset reference is not a structural error.
+        bn = reference_habitat_bn()
+        add_part!(bn, :Variable; variable_name=:Z)
+        @test !any(e -> e isa MissingAttributeError, validation_errors(bn))
+    end
+
     @testset "PositionError (states)" begin
         bn = reference_habitat_bn()
         add_state!(bn, :Climate, :extra; position=5)

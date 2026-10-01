@@ -8,6 +8,24 @@ _in_range(bn, ob::Symbol, id::Int) = 1 <= id <= nparts(bn, ob)
 # Each check appends its errors to `errs` and returns whether later checks that depend on
 # it are safe to run.
 
+# Every `Label` and `Position` attribute of the schema has a value: an ACSet built part by
+# part can leave one unset (`nothing`) or an attribute variable, and every later check reads
+# them. `Ref` attributes are not read here; the semantics layer binds them.
+function _check_attributes!(errs, bn::AbstractBayesNet)
+    ok = true
+    for (attr, ob, T) in attrs(acset_schema(bn))
+        T in (:Label, :Position) || continue
+        for p in parts(bn, ob)
+            v = subpart(bn, p, attr)
+            if v === nothing || v isa ACSets.AttrVar
+                push!(errs, MissingAttributeError(ob, p, attr))
+                ok = false
+            end
+        end
+    end
+    return ok
+end
+
 function _check_references!(errs, bn::AbstractBayesNet)
     ok = true
     for s in parts(bn, :State)
@@ -114,6 +132,9 @@ end
 All structural problems of `bn`, in a deterministic order, without stopping at the
 first. The checks, with the exception each produces:
 
+0. every `Label` and `Position` attribute of the schema (names and positions) has a
+   value ([`MissingAttributeError`](@ref)); only an ACSet built part by part with
+   `add_part!` can lack one;
 1. every `state_variable`, `target`, `input_mechanism` and `input_variable` points at
    an existing part ([`DanglingReferenceError`](@ref));
 2. at most one mechanism per variable ([`DuplicateGeneratorError`](@ref)), and exactly
@@ -130,12 +151,16 @@ first. The checks, with the exception each produces:
    networks legitimately produces repeated names.
 
 Part ids are unique by construction, which covers SPEC §11 item 12 for the ACSet
-itself. Checks 6 and 7 are skipped when check 1 fails.
+itself. Checks 6 and 7 are skipped when check 1 fails. When check 0 fails, only check 1
+runs after it, because the others read the missing attributes: the result is then the
+missing attributes and the dangling references, never a `MethodError`.
 """
 function validation_errors(bn::AbstractBayesNet; closed::Bool=false,
                            unique_names::Bool=false)
     errs = Exception[]
+    attrs_ok = _check_attributes!(errs, bn)
     refs_ok = _check_references!(errs, bn)
+    attrs_ok || return errs
     _check_generators!(errs, bn, closed)
     _check_positions!(errs, bn, :State, :Variable, :state_variable, :state_position,
                       :variable_name)

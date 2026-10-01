@@ -67,7 +67,8 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
 - `src/inspection.jl`: read-only accessors (`states`, `parents`, `inputs`, ...), ordered by positions.
 - `src/graph.jl`: derived `variable_graph` (a Graphs.jl `SimpleDiGraph`), `topological_order`
   (Kahn), `moral_graph` (a `SimpleGraph`). Vertex id = variable part id.
-- `src/validation.jl`: `validate`, `validation_errors`, `Base.isvalid`.
+- `src/validation.jl`: `validate`, `validation_errors`, `Base.isvalid`. Check 0
+  (`MissingAttributeError`) guards the others against attributes an `add_part!` left unset.
 - `src/canonicalize.jl`: deterministic renumbering (`canonicalize`, built on
   `_canonical_copy(bn, variable_order)`) and `is_isomorphic`. When variable names repeat the
   canonical form is not unique, so `is_isomorphic` searches the orderings that permute equally
@@ -169,8 +170,17 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   Decoding (ADR 0013, 0015): every field is read through the typed reads (`_as_string`, `_as_int`,
   `_as_array`, ..., and `_field`/`_ref_field`, which check the record is an object); they throw the
   internal `_JSONShapeError`, which `_decoding(..., _SHAPE_ERRORS, what)` turns into `FormatError`.
-  The `"acset"` body goes through `_parse_acset`, the one scoped catch-all (a third-party parser of
-  document data); InfluenceDiagrams' readers use it too. Never add a catch of `MethodError`.
+  The `"acset"` body goes through `_parse_acset`, which first checks it against the schema of the
+  target type (`_check_acset_body`, with the column kinds `_json_columns` derives from
+  `objects`/`homs`/`attrtypes`/`attrs`): exactly the schema's tables, empty attribute-type tables,
+  exactly each table's columns per row, `"_id"` = row number, homs in range, positions `>= 1`,
+  labels strings, refs exact `KernelRef` objects. These are the Lean decoder's rules (`ColumnKind`,
+  `bnColumns`/`idColumns` in `Finite/JsonRecords.lean`); a failure is a `FormatError` naming the
+  table, row and column. Only then does ACSets' parser run, under the one scoped catch-all (a
+  third-party parser of document data); InfluenceDiagrams' readers use it too. Never add a catch of
+  `MethodError`. JSON3 reads `1.0` as the integer `1`, so that one Lean rejection is not
+  reproduced. In memory, `validation_errors` reports an unset `Label`/`Position` attribute as
+  `MissingAttributeError` and skips the checks that read attributes.
 - `src/graphics.jl`: `to_graphviz` for networks and models (a `Graphviz.Graph` built by hand)
   and `_graphviz_environment!` (called from `__init__`; kept because
   `CategoricalBayesianNetworks.jl` still uses Catlab's renderer for wiring diagrams, which

@@ -21,7 +21,10 @@
 #
 # A second part writes mutated documents (a missing column or table, a hom ID out of range, a
 # value of the wrong JSON type, position 0, a wrong `_id`, an extra key, an unknown `KernelRef`
-# type) and records whether the Lean decoder and Julia's reader reject each.
+# type, and three well-shaped documents of invalid models) and records whether the Lean decoder
+# and Julia reject each: Julia's reader with a `FormatError`, or `validation_errors(x; closed =
+# true)` after a successful read, as the Lean check rejects a decoded but invalid model. A
+# mutated document Julia accepts (reads and validates) fails the run.
 #
 # Trusted, not proved: Lean.Json.parse, Julia's JSON3/ACSets writer, and this script.
 
@@ -311,12 +314,18 @@ println("\n== Mutated documents ==")
 const MUTATIONS = Any[]
 
 function julia_reads(kind, path)
-    try
-        x = kind == "BN" ? read_json_bayesnet(path) : read_json_influence_diagram(path)
-        return julia_valid(x) ? "accepted, validates" : "accepted, validation errors"
+    x = try
+        kind == "BN" ? read_json_bayesnet(path) : read_json_influence_diagram(path)
     catch e
-        return "rejected ($(nameof(typeof(e))))"
+        return "rejected by the reader ($(nameof(typeof(e))))"
     end
+    errs = try
+        validation_errors(x; closed=true)
+    catch e
+        return "read; validation_errors threw $(nameof(typeof(e)))"
+    end
+    isempty(errs) && return "accepted, validates"
+    return "rejected by validate ($(nameof(typeof(first(errs)))))"
 end
 
 function mutate(kind, base, label, f!)
@@ -376,11 +385,16 @@ end
 
 npass = count(r -> r.ok, RESULTS)
 nmut = count(r -> r.lean_ok, MUTATIONS)
+nreader = count(r -> startswith(r.julia, "rejected by the reader"), MUTATIONS)
+nvalidate = count(r -> startswith(r.julia, "rejected by validate"), MUTATIONS)
+naccept = length(MUTATIONS) - nreader - nvalidate
 println("\nComparisons: $(npass) pass, $(length(RESULTS) - npass) fail, of $(length(RESULTS)).")
 println("Mutations rejected by Lean: $(nmut) of $(length(MUTATIONS)).")
+println("Mutations rejected by Julia: $(nreader) by the reader, $(nvalidate) by validate; " *
+        "accepted $(naccept) of $(length(MUTATIONS)).")
 for r in MUTATIONS
     if !startswith(r.julia, "rejected")
         println("  Julia accepts mutated document ($(r.kind)): $(r.label): $(r.julia)")
     end
 end
-exit(npass == length(RESULTS) && nmut == length(MUTATIONS) ? 0 : 1)
+exit(npass == length(RESULTS) && nmut == length(MUTATIONS) && naccept == 0 ? 0 : 1)

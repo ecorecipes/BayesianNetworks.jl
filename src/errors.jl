@@ -164,6 +164,22 @@ struct DanglingReferenceError <: BayesNetError
 end
 
 """
+    MissingAttributeError(part, id, attr)
+
+Part `id` of object `part` has no value for the `Label` or `Position` attribute `attr`,
+such as a state added with `add_part!` and no `state_position`. The constructors
+([`add_variable!`](@ref), [`add_state!`](@ref), ...) always set them; an ACSet built
+part by part may not. [`validation_errors`](@ref) reports it before the checks that read
+attributes. A JSON document cannot produce one: [`parse_json_bayesnet`](@ref) rejects a
+missing or `null` attribute as a [`FormatError`](@ref).
+"""
+struct MissingAttributeError <: BayesNetError
+    part::Symbol
+    id::Int
+    attr::Symbol
+end
+
+"""
     PositionError(part, owner, id, positions)
 
 The positions of the `part`s (`:State` or `:Input`) belonging to `owner` (a variable or
@@ -359,6 +375,11 @@ end
 function Base.showerror(io::IO, e::DanglingReferenceError)
     return print(io, "DanglingReferenceError: ", e.part, " ", e.id, " has ", e.hom, " = ",
                  e.value, ", which is not a valid part")
+end
+
+function Base.showerror(io::IO, e::MissingAttributeError)
+    return print(io, "MissingAttributeError: ", e.part, " ", e.id, " has no value for ",
+                 e.attr)
 end
 
 function Base.showerror(io::IO, e::PositionError)

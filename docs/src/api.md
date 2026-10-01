@@ -328,6 +328,7 @@ CyclicBayesNetError
 MissingMechanismError
 DuplicateGeneratorError
 DanglingReferenceError
+MissingAttributeError
 PositionError
 DuplicateStateError
 EmptyStateSpaceError

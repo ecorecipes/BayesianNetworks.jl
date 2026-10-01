@@ -82,6 +82,7 @@ export SchVariableSpace, SchBayesNet, AbstractVariableSpace, AbstractBayesNet,
 export BayesNetError, AnyBayesNetError
 export UnknownVariableError, UnknownMechanismError, CyclicBayesNetError,
        MissingMechanismError, DuplicateGeneratorError, DanglingReferenceError,
+       MissingAttributeError,
        PositionError, DuplicateStateError, EmptyStateSpaceError, SelfInputError,
        DuplicateNameError,
        FormatError, InterfaceError, InterfaceMismatchError, UnknownStateError,

@@ -29,10 +29,13 @@ const JSON_SCHEMA_VERSION = "0.1"
 #   `_ref_field` check their container), which the record decoders convert with `KeyError`
 #   (`_SHAPE_ERRORS`). The reads check instead of converting blindly, so a `MethodError`
 #   still means a bug (ADR 0015).
-# - The `"acset"` body goes to ACSets' `parse_json_acset`, a third-party parser of pure
-#   document data, so every exception it raises is about the document: `_parse_acset` is
-#   the one scoped catch-all of the decoders, and lets an `InterruptException` through
-#   (ADR 0015).
+# - The `"acset"` body is checked against the schema first (`_check_acset_body`, below
+#   `_parse_acset`): every table and column, and the JSON type and range of every value,
+#   with the rules of the proved Lean decoder. A failure is a `FormatError` that names the
+#   table, row and column. Only then does it go to ACSets' `parse_json_acset`, a
+#   third-party parser of pure document data, so every exception it raises is about the
+#   document: `_parse_acset` is the one scoped catch-all of the decoders, and lets an
+#   `InterruptException` through (ADR 0015).
 
 # Run `f()`, and report an exception of type `T` as a `FormatError` about `what`.
 function _decoding(f, ::Type{T}, what::AbstractString) where {T}
@@ -128,9 +131,29 @@ end
     parse_json_bayesnet(str; type = BayesNet) -> type
 
 Parse a JSON string produced by [`json_bayesnet`](@ref) into a network of the given
-ACSet `type`. Throws [`FormatError`](@ref) if `str` is not JSON, if the envelope is
-missing or names another format or schema version, or if the `"acset"` body cannot be
-decoded as a `type` (ADR 0015).
+ACSet `type`.
+
+# Throws
+
+[`FormatError`](@ref) (ADR 0015), whose message names the table, row and column at
+fault:
+
+- if `str` is not JSON, or the envelope is missing or names another format or schema
+  version;
+- if the `"acset"` body does not have exactly one table per object and attribute type of
+  the schema of `type` (a missing `"Input"` or `"Label"` table is an error, not an empty
+  one), or an attribute-type table is not empty;
+- if a row does not have exactly the columns of its table (`"_id"`, the homs and the
+  attributes; a missing `state_position` or `kernel_ref` is an error, not an unset
+  attribute), or a value has the wrong JSON type or range: an `"_id"` other than the row
+  number, a hom that is not the ID of a row of its codomain, a position that is not an
+  integer `>= 1`, a label that is not a string, or a `Ref` that is not a
+  [`KernelRef`](@ref) object with exactly its type's keys.
+
+These are the rules of the proved Lean decoder
+(`proofs/BayesianNetworksProofs/Finite/JsonRecords.lean`). A document that passes them can
+still describe an invalid network, such as a cycle or repeated input positions:
+[`validate`](@ref) reports those.
 """
 function parse_json_bayesnet(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
     return _parse_envelope(_read_json(str), type)
@@ -153,12 +176,14 @@ function _check_envelope(obj, keys)
     return nothing
 end
 
-# The `"acset"` body, through ACSets' `parse_json_acset`. See "Decoding failures": the one
-# scoped catch-all of the decoders, because the parser is third-party and reads only the
-# document, so what it raises is about the document (ADR 0015).
+# The `"acset"` body: checked against the schema of `type` (`_check_acset_body`), then read
+# by ACSets' `parse_json_acset`. See "Decoding failures": the one scoped catch-all of the
+# decoders, because the parser is third-party and reads only the document, so what it
+# raises is about the document (ADR 0015).
 function _parse_acset(type, body)
     body isa AbstractDict ||
         throw(FormatError("the \"acset\" body must be an object, got $(_json_kind(body))"))
+    _check_acset_body(type, body)
     try
         return parse_json_acset(type, body)
     catch e
@@ -166,6 +191,143 @@ function _parse_acset(type, body)
         throw(FormatError("the \"acset\" body is not a valid $(nameof(type)): " *
                           _decoding_message(e)))
     end
+end
+
+# The shape of an `"acset"` body, checked before ACSets' parser reads it, with the rules of
+# the proved Lean decoders (`ColumnKind`, `Shape` and `decodeBody` in
+# `proofs/BayesianNetworksProofs/Finite/JsonRecords.lean`; `idColumns` and
+# `decodeDiagramBody` in InfluenceDiagrams.jl's `Finite/DVE/JsonRecords.lean`). The tables
+# and columns come from the schema of `type`, so an influence diagram is checked against
+# `SchInfluenceDiagram` by the same code:
+#
+# - the body has exactly one key per object and per attribute type of the schema;
+# - an attribute-type table (`Label`, `Position`, `Ref`) is empty: `generate_json_acset`
+#   writes one row per attribute variable, and the writers store none;
+# - an object table is an array of objects, and its row `k` has exactly the columns
+#   `"_id"`, the homs out of the object and the attributes on it;
+# - `"_id"` is `k`; a hom is the ID of a row of its codomain table; a `Position` is an
+#   integer `>= 1`; a `Label` is a string; a `Ref` is a `KernelRef` object with exactly
+#   the keys of its type, each a string.
+#
+# Unchecked, ACSets' parser read a missing table as zero rows, a missing attribute as unset
+# and a number as a label (`Symbol("5")`), and accepted a `null` attribute.
+
+# The kind of a column of each attribute type, as the Lean decoder's `ColumnKind`; `"_id"`
+# is `:id` and a hom is `:hom`.
+const _ATTRTYPE_COLUMN_KINDS = (Label=:label, Position=:position, Ref=:ref)
+
+function _attrtype_column_kind(T::Symbol)
+    haskey(_ATTRTYPE_COLUMN_KINDS, T) && return _ATTRTYPE_COLUMN_KINDS[T]
+    throw(ArgumentError("the JSON reader has no column kind for the attribute type $T"))
+end
+
+# The columns of the rows of object `ob` of schema `S`, in schema order: name => (kind,
+# codomain).
+function _json_columns(S, ob::Symbol)
+    cols = OrderedDict{Symbol,Tuple{Symbol,Symbol}}(:_id => (:id, ob))
+    for (f, d, c) in homs(S)
+        d == ob && (cols[f] = (:hom, c))
+    end
+    for (f, d, c) in attrs(S)
+        d == ob && (cols[f] = (_attrtype_column_kind(c), c))
+    end
+    return cols
+end
+
+# Keys and values of a decoded JSON object, whose keys are Symbols (JSON3) or Strings.
+_json_keys(d) = Symbol[Symbol(k) for k in keys(d)]
+_json_get(d, k::Symbol) = haskey(d, k) ? d[k] : d[String(k)]
+_json_integer(v) = v isa Integer && !(v isa Bool)
+
+function _check_acset_body(type, body)
+    S = acset_schema(type())
+    function fail(msg)
+        throw(FormatError("the \"acset\" body is not a valid $(nameof(type)): $msg"))
+    end
+    obs, ats = collect(objects(S)), collect(attrtypes(S))
+    tables = vcat(obs, ats)
+    present = _json_keys(body)
+    for T in tables
+        T in present || fail("missing the table \"$T\"")
+    end
+    for k in present
+        k in tables || fail("unknown table \"$k\"")
+    end
+    for T in tables
+        rows = _json_get(body, T)
+        rows isa AbstractVector ||
+            fail("the table \"$T\" must be an array, got $(_json_kind(rows))")
+    end
+    for T in ats
+        n = length(_json_get(body, T))
+        n == 0 || fail("the attribute table \"$T\" must be empty, got " *
+                       (n == 1 ? "1 row" : "$n rows") * " (attribute variables are not read)")
+    end
+    nrows = Dict{Symbol,Int}(T => length(_json_get(body, T)) for T in obs)
+    for T in obs
+        cols = _json_columns(S, T)
+        for (k, row) in enumerate(_json_get(body, T))
+            row isa AbstractDict ||
+                fail("$T row $k must be an object, got $(_json_kind(row))")
+            keys_k = _json_keys(row)
+            for c in keys(cols)
+                c in keys_k || fail("$T row $k: missing the column \"$c\"")
+            end
+            for c in keys_k
+                haskey(cols, c) || fail("$T row $k: unknown column \"$c\"")
+            end
+            for (c, (kind, codom)) in cols
+                problem = _column_problem(_json_get(row, c), kind, codom, k, nrows)
+                problem === nothing || fail("$T row $k: column \"$c\" $problem")
+            end
+        end
+    end
+    return nothing
+end
+
+# What is wrong with the value `v` of a column of kind `kind` in row `k`, or `nothing`.
+function _column_problem(v, kind::Symbol, codom::Symbol, k::Int, nrows)
+    if kind === :id
+        _json_integer(v) && v == k && return nothing
+        return "must be the row number $k, got $(_json_kind(v))"
+    elseif kind === :hom
+        n = nrows[codom]
+        _json_integer(v) && 1 <= v <= n && return nothing
+        return "must be the ID of a \"$codom\" row, an integer in 1:$n, got $(_json_kind(v))"
+    elseif kind === :position
+        _json_integer(v) && 1 <= v <= typemax(Int) && return nothing
+        return "must be a one-based position, an integer >= 1, got $(_json_kind(v))"
+    elseif kind === :label
+        v isa AbstractString && return nothing
+        return "must be a string, got $(_json_kind(v))"
+    else
+        return _kernel_ref_problem(v)
+    end
+end
+
+# A `KernelRef` object as `StructTypes.lower` writes it: a string `"type"` naming one of
+# `_KERNEL_REF_TYPES`, and one string per field of that type, with no other key (the Lean
+# decoder's `decodeRef`).
+function _kernel_ref_problem(v)
+    v isa AbstractDict || return "must be a KernelRef object, got $(_json_kind(v))"
+    ks = _json_keys(v)
+    :type in ks || return "must be a KernelRef object with a \"type\" key"
+    ty = _json_get(v, :type)
+    ty isa AbstractString ||
+        return "must be a KernelRef object whose \"type\" is a string, got $(_json_kind(ty))"
+    T = get(_KERNEL_REF_TYPES, Symbol(ty), nothing)
+    T === nothing && return "has the unknown KernelRef type \"$ty\""
+    expected = (:type, fieldnames(T)...)
+    Set(ks) == Set(expected) && length(ks) == length(expected) ||
+        return "must be a $ty object with exactly the keys " *
+               join(("\"$f\"" for f in expected), ", ") * ", got " *
+               join(("\"$f\"" for f in ks), ", ")
+    for f in fieldnames(T)
+        x = _json_get(v, f)
+        x isa AbstractString ||
+            return "must be a $ty whose \"$f\" is a string, got $(_json_kind(x))"
+    end
+    return nothing
 end
 
 """
@@ -183,8 +345,14 @@ end
 """
     read_json_bayesnet(path; type = BayesNet) -> type
 
-Read a network written by [`write_json_bayesnet`](@ref). Errors as for
-[`parse_json_bayesnet`](@ref).
+Read a network written by [`write_json_bayesnet`](@ref).
+
+# Throws
+
+[`FormatError`](@ref) for a document that [`parse_json_bayesnet`](@ref) rejects: text
+that is not JSON, a wrong envelope, or an `"acset"` body with a missing or unknown table
+or column or a value of the wrong JSON type or range; the message names the table, row
+and column. A missing file is Base's `SystemError`.
 """
 function read_json_bayesnet(path::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
     return _parse_envelope(_read_json(read(path, String)), type)
@@ -442,7 +610,8 @@ JSON; a kernel or history record with a missing key or an unknown [`KernelRef`](
 type; a history record whose time does not parse; and a kernel record whose table does
 not have the length its `"size"` gives, does not fit its spaces or has an entry that is
 not a probability; a JSON value of the wrong type anywhere in the document; and an
-`"acset"` body that ACSets' `parse_json_acset` cannot decode (ADR 0015). A
+`"acset"` body that [`parse_json_bayesnet`](@ref) rejects, such as one with a missing
+table or column (ADR 0015). A
 `BayesNetError` raised while the model is built, such as
 [`UnknownStateError`](@ref) for evidence on a state the variable does not have, passes
 through unchanged.

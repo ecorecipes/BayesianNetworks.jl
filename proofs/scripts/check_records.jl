@@ -26,6 +26,22 @@
 # true)` after a successful read, as the Lean check rejects a decoded but invalid model. A
 # mutated document Julia accepts (reads and validates) fails the run.
 #
+# A third part checks decision precedence and names: mutated diagrams (a precedence cycle, a
+# precedence row against the information order, a self-loop, a row out of range, a duplicate and
+# a consistent row, and duplicate variable, mechanism, decision and utility names) whose Lean
+# verdicts (`valid:`, from `FullValid`, and `valid with unique names:`, from `FullValid` and
+# `NamesUnique`) must equal Julia's (`validate(...; closed = true)` and `validate(...; closed =
+# true, unique_names = true)`, a reader rejection counting as invalid). Every ID summary also
+# compares the `valid with unique names:` line.
+#
+# A fourth part writes the DVE certificate of every influence diagram with numbers
+# (`export_dve_certificate`, binary64 mode, and rational mode with companions recovered from the
+# binary64 certificate) and runs `lake exe check_certificate` (ID proofs project) on the diagram
+# and the certificate: a certificate Julia exports must match (`certificateMatches`), and the
+# exact applicability verdicts are recorded. Mutated certificates (swapped labels, a wrong axis, a
+# repeated variable in the topological order, a missing field and others) must be rejected; Julia
+# has no certificate reader, so there is no Julia verdict for them.
+#
 # Trusted, not proved: Lean.Json.parse, Julia's JSON3/ACSets writer, and this script.
 
 using BayesianNetworks
@@ -42,6 +58,7 @@ const BN_PROOFS = normpath(joinpath(@__DIR__, ".."))
 const ID_PROOFS = normpath(joinpath(@__DIR__, "..", "..", "..", "InfluenceDiagrams.jl", "proofs"))
 const BN_EXE = joinpath(BN_PROOFS, ".lake", "build", "bin", "check_records")
 const ID_EXE = joinpath(ID_PROOFS, ".lake", "build", "bin", "check_records")
+const CERT_EXE = joinpath(ID_PROOFS, ".lake", "build", "bin", "check_certificate")
 
 const OUT = isempty(ARGS) ? mktempdir() : mkpath(ARGS[1])
 
@@ -54,6 +71,7 @@ end
 joinlabels(xs) = join(string.(xs), ", ")
 
 julia_valid(x) = isempty(validation_errors(x; closed=true))
+julia_valid_names(x) = isempty(validation_errors(x; closed=true, unique_names=true))
 
 # Julia's summary of a network, in the Lean executable's format (no topological line).
 function bn_summary(bn)
@@ -81,6 +99,7 @@ end
 function id_summary(id, axes)
     lines = String["format: influence-diagram-acset",
                    "valid: " * (julia_valid(id) ? "yes" : "no"),
+                   "valid with unique names: " * (julia_valid_names(id) ? "yes" : "no"),
                    "variables: $(nparts(id, :Variable))"]
     julia_valid(id) || return lines
     for v in parts(id, :Variable)
@@ -193,11 +212,14 @@ function check_bn(name, bn)
     return compare("BN", name, path, BN_EXE, bn_summary(bn), bn)
 end
 
+const CERT_MODELS = Any[]
+
 function check_id(name, m::InfluenceDiagramModel)
     id = syntax(m)
     path = joinpath(OUT, "id_" * slug(name) * ".json")
     write_json_influence_diagram(path, id)
     axes, source = policy_axes(m)
+    push!(CERT_MODELS, (name=name, model=m, diagram=path))
     return compare("ID", name, path, ID_EXE, id_summary(id, axes), id; note="axes: $source")
 end
 
@@ -383,6 +405,212 @@ let base = joinpath(OUT, "id_umbrella.json")
            a -> (a["Mechanism"][1]["target"] = a["Decision"][1]["decision_variable"]))
 end
 
+# Decision precedence and names: Lean's two verdicts against Julia's.
+println("\n== Precedence and names ==")
+const VERDICTS = Any[]
+
+function julia_verdicts(path)
+    x = try
+        read_json_influence_diagram(path)
+    catch e
+        return ("no", "no", "reader: $(nameof(typeof(e)))")
+    end
+    errs = validation_errors(x; closed=true)
+    errs_names = validation_errors(x; closed=true, unique_names=true)
+    detail = isempty(errs_names) ? "valid" :
+             join(unique(string.(nameof.(typeof.(errs_names)))), ", ")
+    return (isempty(errs) ? "yes" : "no", isempty(errs_names) ? "yes" : "no", detail)
+end
+
+# A document the decoder rejects (no `valid:` line) is invalid for both verdicts.
+function lean_verdicts(path)
+    _, lean = run_lean(ID_EXE, path)
+    get_line(prefix) = begin
+        l = filter(x -> startswith(x, prefix), lean)
+        isempty(l) ? "no" : String(strip(l[1][(length(prefix) + 1):end]))
+    end
+    return (get_line("valid: "), get_line("valid with unique names: "), first(lean))
+end
+
+function verdict_case(base, label, f!)
+    doc = JSON3.read(read(base, String), Dict{String,Any})
+    f!(doc["acset"])
+    path = joinpath(OUT, "prec_" * slug(label) * ".json")
+    write(path, JSON3.write(doc))
+    lv, ln, first_line = lean_verdicts(path)
+    jv, jn, detail = julia_verdicts(path)
+    ok = lv == jv && ln == jn
+    push!(VERDICTS, (label=label, ok=ok, lean=(lv, ln), julia=(jv, jn), detail=detail))
+    lnote = startswith(first_line, "error") ? " ($first_line)" : ""
+    println(rpad(ok ? "PASS" : "FAIL", 6), rpad(label, 52), "| lean: valid $lv, names $ln$lnote",
+            " | julia: valid $jv, names $jn ($detail)")
+    return ok
+end
+
+decision_id(a, name) = findfirst(r -> r["decision_name"] == name, a["Decision"])
+function add_precedence!(a, earlier, later)
+    push!(a["DecisionPrecedence"],
+          Dict("_id" => length(a["DecisionPrecedence"]) + 1,
+               "earlier" => decision_id(a, earlier), "later" => decision_id(a, later)))
+end
+
+let base = joinpath(OUT, "id_" * slug("two_stage (oil wildcatter)") * ".json")
+    verdict_case(base, "unchanged (oil wildcatter)", a -> nothing)
+    verdict_case(base, "consistent precedence (Test before Drill)",
+                 a -> add_precedence!(a, "Test", "Drill"))
+    verdict_case(base, "duplicate precedence row (Test before Drill, twice)",
+                 a -> (add_precedence!(a, "Test", "Drill"); add_precedence!(a, "Test", "Drill")))
+    verdict_case(base, "precedence cycle (Test-Drill-Test)",
+                 a -> (add_precedence!(a, "Test", "Drill"); add_precedence!(a, "Drill", "Test")))
+    verdict_case(base, "precedence against information (Drill before Test)",
+                 a -> add_precedence!(a, "Drill", "Test"))
+    verdict_case(base, "precedence self-loop (Test before Test)",
+                 a -> add_precedence!(a, "Test", "Test"))
+    verdict_case(base, "precedence row out of range (earlier = 3)",
+                 a -> push!(a["DecisionPrecedence"],
+                            Dict("_id" => length(a["DecisionPrecedence"]) + 1,
+                                 "earlier" => 3, "later" => 1)))
+    verdict_case(base, "duplicate variable name",
+                 a -> (a["Variable"][2]["variable_name"] = a["Variable"][1]["variable_name"]))
+    verdict_case(base, "duplicate mechanism name",
+                 a -> (a["Mechanism"][2]["mechanism_name"] = a["Mechanism"][1]["mechanism_name"]))
+    verdict_case(base, "duplicate decision name",
+                 a -> (a["Decision"][2]["decision_name"] = a["Decision"][1]["decision_name"]))
+    verdict_case(base, "duplicate utility name",
+                 a -> (a["Utility"][2]["utility_name"] = a["Utility"][1]["utility_name"]))
+end
+let base = joinpath(OUT, "id_" * slug("car_buyer (built here, random numbers)") * ".json")
+    verdict_case(base, "car buyer: three-decision precedence cycle",
+                 a -> add_precedence!(a, "Purchase", "FirstTest"))
+    verdict_case(base, "car buyer: precedence skipping a decision (FirstTest before Purchase)",
+                 a -> add_precedence!(a, "FirstTest", "Purchase"))
+end
+
+# DVE certificates: every diagram with numbers, binary64 and rational modes, then mutations.
+println("\n== DVE certificates ==")
+const CERTS = Any[]
+
+function run_cert(diagram, cert)
+    out = IOBuffer()
+    p = run(pipeline(ignorestatus(`$CERT_EXE $diagram $cert`); stdout=out, stderr=out))
+    lines = split(chomp(String(take!(out))), '\n')
+    field(prefix) = begin
+        l = filter(x -> startswith(x, prefix), lines)
+        isempty(l) ? "-" : strip(l[1][(length(prefix) + 1):end])
+    end
+    fails = [l for l in lines if endswith(l, ": FAIL") || startswith(l, "certificate: error") ||
+                                 startswith(l, "error")]
+    return (status=p.exitcode, matches=field("matches: "), exact=field("exactly normalised: "),
+            nonneg=field("nonnegative: "), fails=fails, lines=lines)
+end
+
+# Exact companions recovered from a binary64 certificate: the simplest rational that rounds to
+# each cell (`rationalize`), or the cell's own dyadic value when that one does not.
+function companions(cert)
+    tables = Dict{Tuple{Symbol,Int,Tuple},Any}()
+    word(v) = reinterpret(Float64, parse(UInt64, v["f64"]; base=16))
+    exact(x) = (q = rationalize(BigInt, x); Float64(q) == x ? q : Rational{BigInt}(x))
+    for m in cert["mechanisms"], e in m["cpt"]["entries"]
+        tables[(:cpt, parse(Int, m["id"]), Tuple(Int.(e["at"])))] = exact(word(e["value"]))
+    end
+    for u in cert["utilities"], e in u["table"]["entries"]
+        tables[(:utility, parse(Int, u["id"]), Tuple(Int.(e["at"])))] = exact(word(e["value"]))
+    end
+    return tables
+end
+
+function cert_case(name, diagram, mode, export_cert)
+    path = joinpath(OUT, "cert_" * slug(name) * "_" * mode * ".json")
+    cert = try
+        export_cert()
+    catch e
+        println("SKIP  cert $name [$mode]  (export_dve_certificate: $(nameof(typeof(e))))")
+        return nothing
+    end
+    write(path, JSON3.write(cert))
+    r = run_cert(diagram, path)
+    ok = r.status == 0 && r.matches == "yes"
+    push!(CERTS, (name=name, mode=mode, ok=ok, exact=r.exact, nonneg=r.nonneg, fails=r.fails))
+    println(rpad(ok ? "PASS" : "FAIL", 6), rpad("$name [$mode]", 60), "| matches $(r.matches),",
+            " nonnegative $(r.nonneg), exactly normalised $(r.exact)")
+    for f in r.fails
+        println("        ", f)
+    end
+    return ok ? path : nothing
+end
+
+const CERT_BASES = Dict{String,String}()
+for c in CERT_MODELS
+    p = cert_case(c.name, c.diagram, "binary64", () -> export_dve_certificate(c.model))
+    p === nothing && continue
+    CERT_BASES[c.name] = p
+    b64 = JSON3.read(read(p, String), Dict{String,Any})
+    cert_case(c.name, c.diagram, "rational",
+              () -> export_dve_certificate(c.model; numeric_mode=:rational_exact,
+                                           exact_tables=companions(b64)))
+    if c.name == "umbrella"
+        cert_case(c.name, c.diagram, "rational, no bits",
+                  () -> export_dve_certificate(c.model; numeric_mode=:rational_exact,
+                                               exact_tables=companions(b64),
+                                               capture_runtime_bits=false))
+    end
+end
+
+const CERT_MUTATIONS = Any[]
+function cert_mutation(name, label, f!)
+    base = CERT_BASES[name]
+    diagram = only(c.diagram for c in CERT_MODELS if c.name == name)
+    doc = JSON3.read(read(base, String), Dict{String,Any})
+    f!(doc)
+    path = joinpath(OUT, "certmut_" * slug(name) * "_" * slug(label) * ".json")
+    write(path, JSON3.write(doc))
+    r = run_cert(diagram, path)
+    rejected = r.status != 0
+    why = isempty(r.fails) ? "matches $(r.matches)" : join(r.fails, "; ")
+    push!(CERT_MUTATIONS, (name=name, label=label, rejected=rejected, why=why))
+    println(rpad(rejected ? "PASS" : "FAIL", 6), rpad("$name: $label", 64), "| lean: ",
+            rejected ? "rejected ($why)" : "ACCEPTED")
+end
+
+if haskey(CERT_BASES, "umbrella")
+    cert_mutation("umbrella", "swapped label order (Weather)",
+                  d -> (s = d["variables"][1]["states"];
+                        (s[1]["label"], s[2]["label"]) = (s[2]["label"], s[1]["label"])))
+    cert_mutation("umbrella", "wrong axis (Forecast CPT axes reversed)",
+                  d -> reverse!(d["mechanisms"][1]["cpt"]["axes"]))
+    cert_mutation("umbrella", "wrong axis (utility axis Forecast for Weather)",
+                  d -> (d["utilities"][1]["table"]["axes"][1] = "2"))
+    cert_mutation("umbrella", "repeated variable in topological order",
+                  d -> (d["topological_order"] = ["1", "1", "3"]))
+    cert_mutation("umbrella", "topological order against an arc",
+                  d -> (d["topological_order"] = ["2", "1", "3"]))
+    cert_mutation("umbrella", "missing field (decision_order)",
+                  d -> delete!(d, "decision_order"))
+    cert_mutation("umbrella", "missing field (a state label)",
+                  d -> delete!(d["variables"][2]["states"][1], "label"))
+    cert_mutation("umbrella", "reference out of range (target 9)",
+                  d -> (d["mechanisms"][1]["target"] = "9"))
+    cert_mutation("umbrella", "factor cell not the CPT diagonal",
+                  d -> (d["mechanisms"][1]["factor"]["entries"][1]["value"]["f64"] = "3fe0000000000000"))
+    cert_mutation("umbrella", "entry coordinates out of order",
+                  d -> reverse!(d["mechanisms"][1]["cpt"]["entries"]))
+    cert_mutation("umbrella", "word not 16 hex digits",
+                  d -> (d["utilities"][1]["table"]["entries"][1]["value"]["f64"] = "4034"))
+    cert_mutation("umbrella", "duplicate pool entry",
+                  d -> push!(d["reference_pool"],
+                             Dict("code" => length(d["reference_pool"]),
+                                  "reference" => Dict("type" => "NoRef"))))
+    cert_mutation("umbrella", "kind decision on a chance variable",
+                  d -> (d["variables"][1]["kind"] = "decision"))
+end
+if haskey(CERT_BASES, "two_stage (oil wildcatter)")
+    cert_mutation("two_stage (oil wildcatter)", "decision order reversed",
+                  d -> reverse!(d["decision_order"]))
+    cert_mutation("two_stage (oil wildcatter)", "information slots swapped (Drill)",
+                  d -> (s = d["decisions"][2]["information"];
+                        (s[1]["variable"], s[2]["variable"]) = (s[2]["variable"], s[1]["variable"])))
+end
+
 npass = count(r -> r.ok, RESULTS)
 nmut = count(r -> r.lean_ok, MUTATIONS)
 nreader = count(r -> startswith(r.julia, "rejected by the reader"), MUTATIONS)
@@ -397,4 +625,15 @@ for r in MUTATIONS
         println("  Julia accepts mutated document ($(r.kind)): $(r.label): $(r.julia)")
     end
 end
-exit(npass == length(RESULTS) && nmut == length(MUTATIONS) && naccept == 0 ? 0 : 1)
+nverdict = count(r -> r.ok, VERDICTS)
+println("Precedence and names: $(nverdict) of $(length(VERDICTS)) Lean verdicts equal Julia's.")
+ncert = count(r -> r.ok, CERTS)
+nexact = count(r -> r.ok && r.exact == "yes", CERTS)
+println("Certificates matching: $(ncert) of $(length(CERTS)) " *
+        "($(count(r -> r.mode == "binary64", CERTS)) binary64, " *
+        "$(count(r -> r.mode != "binary64", CERTS)) rational); exactly normalised: $(nexact).")
+ncmut = count(r -> r.rejected, CERT_MUTATIONS)
+println("Certificate mutations rejected by Lean: $(ncmut) of $(length(CERT_MUTATIONS)).")
+exit(npass == length(RESULTS) && nmut == length(MUTATIONS) && naccept == 0 &&
+     nverdict == length(VERDICTS) && ncert == length(CERTS) &&
+     ncmut == length(CERT_MUTATIONS) ? 0 : 1)

@@ -59,7 +59,8 @@ Module order (`MD_FILES` in the `Makefile`, the import order of `BayesianNetwork
 The current default target also includes `Finite/Assignments.lean`, `Posterior.lean`,
 `RawRecords.lean`, `ReferenceTables.lean`, `FactorMarginal.lean`, `JunctionTree.lean`,
 `ConditionalIndependence.lean`, `DSeparation.lean`, `NumericalContracts.lean`,
-`RefinementExamples.lean` and `Numeric/Binary64.lean`. Their exact placement in the generated
+`RefinementExamples.lean`, `Numeric/Binary64.lean` and `Numeric/ErrorBounds.lean`. Their exact
+placement in the generated
 document is `MD_FILES`.
 
 ## What is formalised
@@ -80,6 +81,7 @@ document is `MD_FILES`.
 | `Finite/BoundaryCases.lean` | A binary pass-through wire refutes dropping the interface-disjointness assumptions of `osem_compose_glue`, and the pass-through formula gives the true value on the same wire. Mechanism-free subset feet have at most as many outputs as inputs, exposing the missing noninjective output legs for copying feet. |
 | `Markov/Basic.lean` | Generic Mathlib `MarkovCategory` / `CopyDiscardCategory` consequences. The concrete finite instance is now in `FiniteKernels.jl/proofs/FiniteKernelsProofs/Theory/FinStoch.lean`. |
 | `Numeric/Binary64.lean` | Binary64 words and their decoding, the IEEE 754 round-to-nearest-ties-to-even specification `RoundsTo` of a rational, and transcriptions of `_rational_exponent`, `_nearest_binary64` and `_dyadic` (`src/exact_rounding.jl`, ADR 0016), proved correct on every rational: see below. |
+| `Numeric/ErrorBounds.lean` | Forward error bounds under the standard rounding model (`Rounded u x c`: `c = x(1+δ)`, `|δ| ≤ u`; `γ n = (1+u)^n - 1`): the bridge from `RoundsTo` to the model with `u = 2^-53`, sums and products of nonnegative numbers in any association, variable elimination, the normalised posterior and log-sum-exp: see below. |
 | `Roadmap.lean` | Remaining categorical/representation questions; no unproved declarations. |
 
 `Audit.lean` prints the axioms of every main theorem; all report a subset of
@@ -143,6 +145,38 @@ rejects unexpected output or warnings. It does not merely print an audit to the 
   transcribed algorithm on mathematical integers; that it matches the Julia text is a
   line-by-line reading, and Julia's execution of it and GMP's `BigInt` arithmetic are not
   covered. Uniqueness and monotonicity of rounding are not proved.
+* `Numeric/ErrorBounds.lean` bounds the ordinary floating-point paths. In the standard model
+  `Rounded u x c` (`c = x * (1 + δ)`, `|δ| ≤ u`) with `γ n = (1 + u)^n - 1` and relative error
+  `RelWithin e y x` (`|x - y| ≤ e * y`) against a nonnegative exact `y`, it proves:
+  the bridge `roundsTo_relative` (a word with `RoundsTo q w` and `2^-1022 ≤ |q| <
+  2^1024 - 2^970` has `|value w - q| ≤ 2^-53 |q|`, derived from `RoundsTo.nearest` by
+  exhibiting a finite word that near `q`), `roundsTo_subnormal` (absolute error `2^-1075` below
+  `2^-1022`), `roundsTo_rounded` (so `Rounded (2^-53)` holds for a zero or normal-range exact
+  result) and their `nearestBinary64_*` corollaries; `compProd_forward_error` (a product of `k`
+  nonnegative numbers in any order and association is within relative `γ (k - 1)`) and
+  `sumRun_forward_error` (a sum along any association tree `t` of `n` nonnegative numbers is
+  within `γ (height t)`, hence `γ (n - 1)`); `eliminateAll_forward_error` (an approximate run
+  `Run` beside `eliminateAll`, every sum-out a computed sum of computed products, has every
+  computed entry within relative `γ N` of the exact entry for nonnegative factors, with
+  `N = |fs| + Σ_{v ∈ vs} |states v| - 1`), with `eliminateAll_marg_forward_error` and the
+  evidence-by-slicing form `conditioned_forward_error`; `normalize_forward_error` and
+  `ve_posterior_forward_error` (with the evidence indicator, `vs = Qᶜ` and
+  `K = |M| + Σ_{v ∈ vs} |states v| + |query assignments|`, positive evidence mass and
+  `γ K < 1`, the computed mass is within relative `γ (K - 1)` and every posterior entry within
+  relative `(1 + γ K)/(1 - γ K) - 1`); and `logSumExp_forward_error` (the `_LogDomain` sum-out
+  `m + log Σ exp (x i - m)`, with `exp` and `log` of relative error `u` as a hypothesis, within
+  `u |exact| + (1 + u)(u (log n + λ) + λ)` on the log scale). The model has no absolute term,
+  so underflow and overflow are excluded from all but the bridge; the Julia engines send an
+  evidence mass below `floatmin` to the exact fallback (ADR 0014, ADR 0016). That Julia's Float64
+  operations are correctly rounded is IEEE 754 plus Julia's and the hardware's semantics,
+  assumed and not proved. These are theorems about the factor algebra under an abstract model,
+  not about Julia's loop order, SIMD reassociation or execution, and not about the
+  junction-tree, belief-propagation or brute-force paths.
+  For scale: a single-variable query with evidence on bnlearn `asia` (8 binary variables) has
+  `K = 24` and a posterior bound of `48u ≈ 5.3e-15`, inside the conformance tolerance
+  `32 eps + 128 eps · p` (`conformance/compare.py`); `water` (`K = 148`, `296u`) is inside it
+  only thanks to the `32 eps` absolute term, and `hailfinder` (`K = 279`, `558u`) is not inside
+  it for posterior entries above about `0.21` (`docs/LEAN-JULIA-DISCREPANCIES-2026-09-30.md` §16).
 
 The examples check shuffled raw row IDs, repeated slots, reference-bound rational data,
 a graphical fork and three disconnected components with globally impossible evidence.

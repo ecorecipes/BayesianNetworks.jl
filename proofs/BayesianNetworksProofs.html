@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Simon Frost" />
-  <meta name="dcterms.date" content="2026-09-30" />
+  <meta name="dcterms.date" content="2026-10-01" />
   <title>Formal Verification of BayesianNetworks.jl</title>
   <style>
     /* Default styles provided by pandoc.
@@ -96,7 +96,7 @@
 <header id="title-block-header">
 <h1 class="title">Formal Verification of BayesianNetworks.jl</h1>
 <p class="author">Simon Frost</p>
-<p class="date">2026-09-30</p>
+<p class="date">2026-10-01</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -232,6 +232,30 @@ rounding</a></li>
 id="toc-base.decompose-and-_dyadic"><code>Base.decompose</code> and
 <code>_dyadic</code></a></li>
 <li><a href="#round-trip" id="toc-round-trip">Round trip</a></li>
+</ul></li>
+<li><a href="#forward-error-bounds-for-the-floating-point-paths"
+id="toc-forward-error-bounds-for-the-floating-point-paths">Forward error
+bounds for the floating-point paths</a>
+<ul>
+<li><a href="#the-standard-model-of-rounding"
+id="toc-the-standard-model-of-rounding">The standard model of
+rounding</a></li>
+<li><a href="#relative-error-of-nonnegative-quantities"
+id="toc-relative-error-of-nonnegative-quantities">Relative error of
+nonnegative quantities</a></li>
+<li><a href="#association-trees" id="toc-association-trees">Association
+trees</a></li>
+<li><a href="#sums-and-products-of-lists-in-any-order-and-association"
+id="toc-sums-and-products-of-lists-in-any-order-and-association">Sums
+and products of lists, in any order and association</a></li>
+<li><a href="#the-bridge-to-binary64"
+id="toc-the-bridge-to-binary64">The bridge to binary64</a></li>
+<li><a href="#normalisation"
+id="toc-normalisation">Normalisation</a></li>
+<li><a href="#variable-elimination-under-the-standard-model"
+id="toc-variable-elimination-under-the-standard-model">Variable
+elimination under the standard model</a></li>
+<li><a href="#log-sum-exp" id="toc-log-sum-exp">Log-sum-exp</a></li>
 </ul></li>
 <li><a href="#roadmap" id="toc-roadmap">Roadmap</a></li>
 </ul>
@@ -6497,11 +6521,1119 @@ class="sourceCode lean"><code class="sourceCode lean"><span id="cb73-1"><a href=
 <span id="cb73-98"><a href="#cb73-98" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [word_eq r R.word, word_eq w hw<span class="fl">.1</span>, hsign, hf, hfr]</span>
 <span id="cb73-99"><a href="#cb73-99" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb73-100"><a href="#cb73-100" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.Binary64</span></code></pre></div>
+<!-- BayesianNetworksProofs/Numeric/ErrorBounds.lean -->
+<h1 id="forward-error-bounds-for-the-floating-point-paths">Forward error
+bounds for the floating-point paths</h1>
+<div class="sourceCode" id="cb74"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Numeric.Binary64</span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.Posterior</span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Algebra.Order.BigOperators.GroupWithZero.List</span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Data.Nat.Lattice</span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> Mathlib.Analysis.SpecialFunctions.Log.Basic</span></code></pre></div>
+<p>The inference engines compute in Float64.
+<code>Numeric/Binary64.lean</code> proves that the exact fallback’s
+final rounding is correct; this module bounds the error of the ordinary
+floating-point paths, as theorems about an abstract rounding model
+applied to the factor algebra of
+<code>Finite/VariableElimination.lean</code> and
+<code>Finite/Posterior.lean</code>.</p>
+<p><strong>The standard model.</strong> <code>Rounded u x c</code> says
+that <code>c</code> is a computed result of an operation whose exact
+result is <code>x</code>: <code>c = x * (1 + δ)</code> with
+<code>|δ| ≤ u</code>. For binary64, <code>u = 2 ^ -53</code>
+(<code>binary64Unit</code>). <code>γ n = (1 + u) ^ n - 1</code>
+(<code>gamma</code>) bounds the relative error of <code>n</code>
+roundings, and <code>RelWithin e y x</code>
+(<code>|x - y| ≤ e * y</code>) is relative error against a nonnegative
+exact value. Relative errors of nonnegative quantities compose without
+any cancellation argument: <code>RelWithin.mul</code>,
+<code>RelWithin.add</code> and <code>RelWithin.round</code>.</p>
+<p><strong>The bridge to binary64</strong>
+(<code>roundsTo_relative</code>, <code>roundsTo_subnormal</code>,
+<code>roundsTo_rounded</code>, and
+<code>nearestBinary64_relative</code>,
+<code>nearestBinary64_subnormal</code>,
+<code>nearestBinary64_rounded</code> for the transcription of
+<code>_nearest_binary64</code>). A word <code>w</code> with
+<code>RoundsTo q w</code> (IEEE 754 round-to-nearest, ties-to-even, of
+the rational <code>q</code>) satisfies
+<code>|value w - q| ≤ 2 ^ -53 |q|</code> when
+<code>2 ^ -1022 ≤ |q| &lt; overflowThreshold</code>, and
+<code>|value w - q| ≤ 2 ^ -1075</code> when
+<code>|q| &lt; 2 ^ -1022</code>. The relative bound is derived from
+<code>RoundsTo.nearest</code> by exhibiting a finite word within
+<code>2 ^ -53 |q|</code> of <code>q</code>. So
+<code>Rounded binary64Unit</code> holds for correct rounding of an exact
+result that is zero or in the normal range. That Julia’s Float64
+<code>+</code>, <code>*</code>, <code>-</code> and <code>/</code>
+deliver the correctly rounded result of their exact real operation is
+IEEE 754 together with Julia’s and the hardware’s semantics: it is
+<strong>assumed, not proved</strong>. Julia’s <code>exp</code> and
+<code>log</code> are not correctly rounded; the log-sum-exp theorem
+takes their relative error <code>u</code> as a hypothesis.</p>
+<p><strong>What is proved.</strong></p>
+<ul>
+<li><code>compProd_forward_error</code>: a product of <code>k</code>
+nonnegative numbers computed in any order and association is within
+relative <code>γ (k - 1)</code> of the exact product.</li>
+<li><code>sumRun_forward_error</code>: a sum of <code>n</code>
+nonnegative numbers computed along any association tree <code>t</code>
+(<code>Assoc</code>, <code>SumRun</code>) is within relative
+<code>γ (height t)</code>, hence <code>γ (n - 1)</code>, of the exact
+sum. The tree is a universally quantified argument: the bound does not
+depend on the order.</li>
+<li><code>eliminateAll_forward_error</code>: an approximate run of
+variable elimination (<code>Run</code>) pairs each exact factor of
+<code>eliminateAll</code> with a computed table. Each step computes
+every entry of the bucket’s sum-out as a sum, in any association, over
+the states of <code>v</code> of products, in any association, of the
+bucket’s computed tables, every operation rounded in the standard model.
+For nonnegative input factors <code>fs</code> and an elimination list
+<code>vs</code>, every entry of every computed factor, and of any
+computed product of the remaining factors, is within relative
+<code>γ N</code> of the exact entry, with the explicit index
+<code>N = veIndex fs.length vs = |fs| + Σ_{v ∈ vs} |states v| - 1</code>.
+<code>eliminateAll_marg_forward_error</code> restates it against
+<code>marg vs.toFinset (product fs)</code>, and
+<code>conditioned_forward_error</code> covers evidence by slicing
+(<code>condition</code>), the shape of the Julia engine.</li>
+<li><code>normalize_forward_error</code> and
+<code>ve_posterior_forward_error</code>: with the evidence indicator and
+the compiled CPT factors, <code>vs = Qᶜ</code>, the mass <code>Z</code>
+summed in any association and each posterior entry the rounded quotient
+<code>num q / Z</code>, let
+<code>K = posteriorIndex bn Q vs = (|M| + 1) + Σ_{v ∈ vs} |states v| - 1 + |query assignments|</code>.
+When the evidence mass is positive and <code>γ K &lt; 1</code>, the
+computed mass is within relative <code>γ (K - 1)</code> of the evidence
+mass and every computed posterior entry is within relative
+<code>(1 + γ K) / (1 - γ K) - 1</code> (about <code>2 K u</code>) of the
+exact posterior entry.</li>
+<li><code>logSumExp_forward_error</code>:
+<code>m + log Σ exp (x i - m)</code>, with the subtraction, each
+<code>exp</code>, each addition, the <code>log</code> and the final
+addition rounded with relative error <code>u</code>, and the spread
+<code>m - x i ≤ D</code>, is within
+<code>u |exact| + (1 + u) (u (log n + λ) + λ)</code> of the exact value,
+where <code>λ = -log (1 - ((1 + u) ^ n exp (u D) - 1))</code>.</li>
+</ul>
+<p><strong>Scope.</strong> The model has no absolute term: the VE,
+posterior and log-sum-exp theorems assume that every operation’s result
+satisfies <code>Rounded u</code>, which for binary64 the bridge
+discharges only when each exact intermediate result is zero or in the
+normal range. <strong>Underflow and overflow are excluded</strong>; only
+the bridge’s <code>roundsTo_subnormal</code> and
+<code>roundsTo_error</code> carry the absolute term
+<code>2 ^ -1075</code>. The Julia engines do not rely on these theorems
+at small mass: an evidence mass below <code>floatmin(Float64)</code>
+sends the query to the exact fallback (ADR 0014, ADR 0016), which
+<code>Binary64.lean</code> covers. Intermediate products that underflow
+while the final mass stays above <code>floatmin</code> are outside both.
+These are theorems about the factor algebra under an abstract rounding
+model, with order and association universally quantified; they are not
+about Julia’s loop order, SIMD reassociation, array layout or execution,
+nor about the junction-tree, belief-propagation or brute-force paths.
+The run starts from the CPT entries as given (the Float64 inputs are the
+exact data), and the indices are worst-case bounds, not estimates.</p>
+<div class="sourceCode" id="cb75"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> autoImplicit false</span>
+<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb75-3"><a href="#cb75-3" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> BayesianNetworksProofs.ErrorBounds</span></code></pre></div>
+<h2 id="the-standard-model-of-rounding">The standard model of
+rounding</h2>
+<div class="sourceCode" id="cb76"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The standard model with unit roundoff `u`: `c` is a computed result of an operation whose</span></span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a><span class="do">exact result is `x` when `c = x * (1 + δ)` for some `|δ| ≤ u`. -/</span></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> Rounded (u x c : ℝ) : <span class="kw">Prop</span> := ∃ δ : ℝ, |δ| ≤ u ∧ c = x * (<span class="dv">1</span> + δ)</span>
+<span id="cb76-4"><a href="#cb76-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-5"><a href="#cb76-5" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> rounded_iff {u : ℝ} (hu : <span class="dv">0</span> ≤ u) (x c : ℝ) : Rounded u x c ↔ |c - x| ≤ u * |x| := <span class="kw">by</span></span>
+<span id="cb76-6"><a href="#cb76-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">constructor</span></span>
+<span id="cb76-7"><a href="#cb76-7" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rintro</span> ⟨δ, hδ, rfl⟩</span>
+<span id="cb76-8"><a href="#cb76-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [<span class="kw">show</span> x * (<span class="dv">1</span> + δ) - x = x * δ <span class="kw">by</span> <span class="cf">ring</span>, abs_mul, mul_comm]</span>
+<span id="cb76-9"><a href="#cb76-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> mul_le_mul_of_nonneg_right hδ (abs_nonneg x)</span>
+<span id="cb76-10"><a href="#cb76-10" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">intro</span> h</span>
+<span id="cb76-11"><a href="#cb76-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> hx : x = <span class="dv">0</span></span>
+<span id="cb76-12"><a href="#cb76-12" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">subst</span> hx</span>
+<span id="cb76-13"><a href="#cb76-13" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> ⟨<span class="dv">0</span>, <span class="kw">by</span> <span class="cf">simpa</span> <span class="kw">using</span> hu, ?_⟩</span>
+<span id="cb76-14"><a href="#cb76-14" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : |c| ≤ <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">simpa</span> <span class="kw">using</span> h</span>
+<span id="cb76-15"><a href="#cb76-15" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simpa</span> <span class="kw">using</span> abs_nonpos_iff.mp this</span>
+<span id="cb76-16"><a href="#cb76-16" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">refine</span> ⟨(c - x) / x, ?_, <span class="kw">by</span> <span class="cf">field_simp</span>; ring⟩</span>
+<span id="cb76-17"><a href="#cb76-17" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [abs_div]</span>
+<span id="cb76-18"><a href="#cb76-18" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> (div_le_iff₀ (abs_pos.mpr hx)).mpr h</span>
+<span id="cb76-19"><a href="#cb76-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-20"><a href="#cb76-20" aria-hidden="true" tabindex="-1"></a><span class="do">/-- An exact operation satisfies the model. -/</span></span>
+<span id="cb76-21"><a href="#cb76-21" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> rounded_exact {u : ℝ} (hu : <span class="dv">0</span> ≤ u) (x : ℝ) : Rounded u x x := ⟨<span class="dv">0</span>, <span class="kw">by</span> <span class="cf">simpa</span> <span class="kw">using</span> hu, <span class="kw">by</span> ring⟩</span>
+<span id="cb76-22"><a href="#cb76-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-23"><a href="#cb76-23" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `γ n = (1 + u) ^ n - 1`, the relative error bound after `n` roundings. -/</span></span>
+<span id="cb76-24"><a href="#cb76-24" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gamma (u : ℝ) (n : ℕ) : ℝ := (<span class="dv">1</span> + u) ^ n - <span class="dv">1</span></span>
+<span id="cb76-25"><a href="#cb76-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-26"><a href="#cb76-26" aria-hidden="true" tabindex="-1"></a><span class="kw">variable</span> {u : ℝ}</span>
+<span id="cb76-27"><a href="#cb76-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-28"><a href="#cb76-28" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> gamma_zero : gamma u <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">simp</span> [gamma]</span>
+<span id="cb76-29"><a href="#cb76-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-30"><a href="#cb76-30" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> one_add_gamma (n : ℕ) : <span class="dv">1</span> + gamma u n = (<span class="dv">1</span> + u) ^ n := <span class="kw">by</span> <span class="cf">simp</span> [gamma]</span>
+<span id="cb76-31"><a href="#cb76-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-32"><a href="#cb76-32" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> gamma_nonneg (hu : <span class="dv">0</span> ≤ u) (n : ℕ) : <span class="dv">0</span> ≤ gamma u n := <span class="kw">by</span></span>
+<span id="cb76-33"><a href="#cb76-33" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> gamma</span>
+<span id="cb76-34"><a href="#cb76-34" aria-hidden="true" tabindex="-1"></a>  <span class="cf">linarith</span> [one_le_pow₀ (n := n) (<span class="kw">show</span> (<span class="dv">1</span> : ℝ) ≤ <span class="dv">1</span> + u <span class="kw">by</span> <span class="cf">linarith</span>)]</span>
+<span id="cb76-35"><a href="#cb76-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-36"><a href="#cb76-36" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> gamma_mono (hu : <span class="dv">0</span> ≤ u) {m n : ℕ} (h : m ≤ n) : gamma u m ≤ gamma u n := <span class="kw">by</span></span>
+<span id="cb76-37"><a href="#cb76-37" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> gamma</span>
+<span id="cb76-38"><a href="#cb76-38" aria-hidden="true" tabindex="-1"></a>  <span class="cf">linarith</span> [pow_le_pow_right₀ (<span class="kw">show</span> (<span class="dv">1</span> : ℝ) ≤ <span class="dv">1</span> + u <span class="kw">by</span> <span class="cf">linarith</span>) h]</span>
+<span id="cb76-39"><a href="#cb76-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-40"><a href="#cb76-40" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> gamma_add (a b : ℕ) : (<span class="dv">1</span> + gamma u a) * (<span class="dv">1</span> + gamma u b) = <span class="dv">1</span> + gamma u (a + b) := <span class="kw">by</span></span>
+<span id="cb76-41"><a href="#cb76-41" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> only [one_add_gamma, pow_add]</span></code></pre></div>
+<h2 id="relative-error-of-nonnegative-quantities">Relative error of
+nonnegative quantities</h2>
+<div class="sourceCode" id="cb77"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `x` approximates the exact value `y` to relative error `e`: `|x - y| ≤ e * y`. Used only for</span></span>
+<span id="cb77-2"><a href="#cb77-2" aria-hidden="true" tabindex="-1"></a><span class="do">`0 ≤ y`, where it says `x ∈ [(1 - e) y, (1 + e) y]`. -/</span></span>
+<span id="cb77-3"><a href="#cb77-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RelWithin (e y x : ℝ) : <span class="kw">Prop</span> := |x - y| ≤ e * y</span>
+<span id="cb77-4"><a href="#cb77-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-5"><a href="#cb77-5" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> relWithin_refl (y : ℝ) {e : ℝ} (he : <span class="dv">0</span> ≤ e) (hy : <span class="dv">0</span> ≤ y) : RelWithin e y y := <span class="kw">by</span></span>
+<span id="cb77-6"><a href="#cb77-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> [RelWithin]; <span class="cf">positivity</span></span>
+<span id="cb77-7"><a href="#cb77-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-8"><a href="#cb77-8" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.mono {e e&#39; y x : ℝ} (h : RelWithin e y x) (he : e ≤ e&#39;) (hy : <span class="dv">0</span> ≤ y) :</span>
+<span id="cb77-9"><a href="#cb77-9" aria-hidden="true" tabindex="-1"></a>    RelWithin e&#39; y x := h.trans (mul_le_mul_of_nonneg_right he hy)</span>
+<span id="cb77-10"><a href="#cb77-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-11"><a href="#cb77-11" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.abs_le {e y x : ℝ} (h : RelWithin e y x) (hy : <span class="dv">0</span> ≤ y) : |x| ≤ (<span class="dv">1</span> + e) * y := <span class="kw">by</span></span>
+<span id="cb77-12"><a href="#cb77-12" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h&#39; : |x - y| ≤ e * y := h</span>
+<span id="cb77-13"><a href="#cb77-13" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> |x| = |(x - y) + y| := <span class="kw">by</span> ring_nf</span>
+<span id="cb77-14"><a href="#cb77-14" aria-hidden="true" tabindex="-1"></a>    _ ≤ |x - y| + |y| := abs_add_le _ _</span>
+<span id="cb77-15"><a href="#cb77-15" aria-hidden="true" tabindex="-1"></a>    _ ≤ e * y + y := <span class="kw">by</span> <span class="cf">rw</span> [abs_of_nonneg hy]; <span class="cf">linarith</span></span>
+<span id="cb77-16"><a href="#cb77-16" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb77-17"><a href="#cb77-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-18"><a href="#cb77-18" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Relative errors of a product of nonnegative exact values compose multiplicatively. -/</span></span>
+<span id="cb77-19"><a href="#cb77-19" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.mul {a b y y&#39; x x&#39; : ℝ} (h : RelWithin a y x) (h&#39; : RelWithin b y&#39; x&#39;)</span>
+<span id="cb77-20"><a href="#cb77-20" aria-hidden="true" tabindex="-1"></a>    (ha : <span class="dv">0</span> ≤ a) (hy : <span class="dv">0</span> ≤ y) (hy&#39; : <span class="dv">0</span> ≤ y&#39;) :</span>
+<span id="cb77-21"><a href="#cb77-21" aria-hidden="true" tabindex="-1"></a>    RelWithin ((<span class="dv">1</span> + a) * (<span class="dv">1</span> + b) - <span class="dv">1</span>) (y * y&#39;) (x * x&#39;) := <span class="kw">by</span></span>
+<span id="cb77-22"><a href="#cb77-22" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> RelWithin <span class="kw">at</span> *</span>
+<span id="cb77-23"><a href="#cb77-23" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> he : x * x&#39; - y * y&#39; = (x - y) * (x&#39; - y&#39;) + y * (x&#39; - y&#39;) + y&#39; * (x - y) := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb77-24"><a href="#cb77-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [he]</span>
+<span id="cb77-25"><a href="#cb77-25" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> _ ≤ |(x - y) * (x&#39; - y&#39;)| + |y * (x&#39; - y&#39;)| + |y&#39; * (x - y)| := abs_add_three _ _ _</span>
+<span id="cb77-26"><a href="#cb77-26" aria-hidden="true" tabindex="-1"></a>    _ = |x - y| * |x&#39; - y&#39;| + y * |x&#39; - y&#39;| + y&#39; * |x - y| := <span class="kw">by</span></span>
+<span id="cb77-27"><a href="#cb77-27" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [abs_mul, abs_mul, abs_mul, abs_of_nonneg hy, abs_of_nonneg hy&#39;]</span>
+<span id="cb77-28"><a href="#cb77-28" aria-hidden="true" tabindex="-1"></a>    _ ≤ (a * y) * (b * y&#39;) + y * (b * y&#39;) + y&#39; * (a * y) := <span class="kw">by</span></span>
+<span id="cb77-29"><a href="#cb77-29" aria-hidden="true" tabindex="-1"></a>        gcongr</span>
+<span id="cb77-30"><a href="#cb77-30" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb77-31"><a href="#cb77-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-32"><a href="#cb77-32" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Relative errors of a sum of nonnegative exact values do not grow beyond the larger. -/</span></span>
+<span id="cb77-33"><a href="#cb77-33" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.add {e y y&#39; x x&#39; : ℝ} (h : RelWithin e y x) (h&#39; : RelWithin e y&#39; x&#39;) :</span>
+<span id="cb77-34"><a href="#cb77-34" aria-hidden="true" tabindex="-1"></a>    RelWithin e (y + y&#39;) (x + x&#39;) := <span class="kw">by</span></span>
+<span id="cb77-35"><a href="#cb77-35" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> RelWithin <span class="kw">at</span> *</span>
+<span id="cb77-36"><a href="#cb77-36" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> |x + x&#39; - (y + y&#39;)| = |(x - y) + (x&#39; - y&#39;)| := <span class="kw">by</span> ring_nf</span>
+<span id="cb77-37"><a href="#cb77-37" aria-hidden="true" tabindex="-1"></a>    _ ≤ |x - y| + |x&#39; - y&#39;| := abs_add_le _ _</span>
+<span id="cb77-38"><a href="#cb77-38" aria-hidden="true" tabindex="-1"></a>    _ ≤ e * y + e * y&#39; := add_le_add h h&#39;</span>
+<span id="cb77-39"><a href="#cb77-39" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb77-40"><a href="#cb77-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-41"><a href="#cb77-41" aria-hidden="true" tabindex="-1"></a><span class="do">/-- One rounding in the standard model multiplies the error budget by `1 + u`. -/</span></span>
+<span id="cb77-42"><a href="#cb77-42" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.round {e y x c : ℝ} (h : RelWithin e y x) (hy : <span class="dv">0</span> ≤ y) (hu : <span class="dv">0</span> ≤ u)</span>
+<span id="cb77-43"><a href="#cb77-43" aria-hidden="true" tabindex="-1"></a>    (hc : Rounded u x c) : RelWithin ((<span class="dv">1</span> + u) * (<span class="dv">1</span> + e) - <span class="dv">1</span>) y c := <span class="kw">by</span></span>
+<span id="cb77-44"><a href="#cb77-44" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [rounded_iff hu] <span class="kw">at</span> hc</span>
+<span id="cb77-45"><a href="#cb77-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hx := h.abs_le hy</span>
+<span id="cb77-46"><a href="#cb77-46" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> RelWithin <span class="kw">at</span> *</span>
+<span id="cb77-47"><a href="#cb77-47" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> |c - y| = |(c - x) + (x - y)| := <span class="kw">by</span> ring_nf</span>
+<span id="cb77-48"><a href="#cb77-48" aria-hidden="true" tabindex="-1"></a>    _ ≤ |c - x| + |x - y| := abs_add_le _ _</span>
+<span id="cb77-49"><a href="#cb77-49" aria-hidden="true" tabindex="-1"></a>    _ ≤ u * ((<span class="dv">1</span> + e) * y) + e * y := add_le_add (hc.trans (mul_le_mul_of_nonneg_left hx hu)) h</span>
+<span id="cb77-50"><a href="#cb77-50" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb77-51"><a href="#cb77-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-52"><a href="#cb77-52" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.mul_gamma (hu : <span class="dv">0</span> ≤ u) {a b : ℕ} {y y&#39; x x&#39; : ℝ}</span>
+<span id="cb77-53"><a href="#cb77-53" aria-hidden="true" tabindex="-1"></a>    (h : RelWithin (gamma u a) y x) (h&#39; : RelWithin (gamma u b) y&#39; x&#39;)</span>
+<span id="cb77-54"><a href="#cb77-54" aria-hidden="true" tabindex="-1"></a>    (hy : <span class="dv">0</span> ≤ y) (hy&#39; : <span class="dv">0</span> ≤ y&#39;) : RelWithin (gamma u (a + b)) (y * y&#39;) (x * x&#39;) := <span class="kw">by</span></span>
+<span id="cb77-55"><a href="#cb77-55" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := h.mul h&#39; (gamma_nonneg hu a) hy hy&#39;</span>
+<span id="cb77-56"><a href="#cb77-56" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rwa</span> [gamma_add, add_sub_cancel_left] <span class="kw">at</span> this</span>
+<span id="cb77-57"><a href="#cb77-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb77-58"><a href="#cb77-58" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.round_gamma (hu : <span class="dv">0</span> ≤ u) {a : ℕ} {y x c : ℝ} (h : RelWithin (gamma u a) y x)</span>
+<span id="cb77-59"><a href="#cb77-59" aria-hidden="true" tabindex="-1"></a>    (hy : <span class="dv">0</span> ≤ y) (hc : Rounded u x c) : RelWithin (gamma u (a + <span class="dv">1</span>)) y c := <span class="kw">by</span></span>
+<span id="cb77-60"><a href="#cb77-60" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := h.round hy hu hc</span>
+<span id="cb77-61"><a href="#cb77-61" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rwa</span> [<span class="kw">show</span> (<span class="dv">1</span> + u) * (<span class="dv">1</span> + gamma u a) - <span class="dv">1</span> = gamma u (a + <span class="dv">1</span>) <span class="kw">by</span></span>
+<span id="cb77-62"><a href="#cb77-62" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [one_add_gamma]; <span class="cf">unfold</span> gamma; <span class="cf">ring</span>] <span class="kw">at</span> this</span></code></pre></div>
+<h2 id="association-trees">Association trees</h2>
+<div class="sourceCode" id="cb78"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A binary association: the shape of a computation that combines its leaves pairwise. Any</span></span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a><span class="do">parenthesisation of a sum or product of `n ≥ 1` terms is such a tree. -/</span></span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a><span class="kw">inductive</span> Assoc (ι : <span class="kw">Type</span>) <span class="kw">where</span></span>
+<span id="cb78-4"><a href="#cb78-4" aria-hidden="true" tabindex="-1"></a>  | leaf (i : ι)</span>
+<span id="cb78-5"><a href="#cb78-5" aria-hidden="true" tabindex="-1"></a>  | node (l r : Assoc ι)</span>
+<span id="cb78-6"><a href="#cb78-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-7"><a href="#cb78-7" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> Assoc</span>
+<span id="cb78-8"><a href="#cb78-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-9"><a href="#cb78-9" aria-hidden="true" tabindex="-1"></a><span class="kw">variable</span> {ι : <span class="kw">Type</span>}</span>
+<span id="cb78-10"><a href="#cb78-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-11"><a href="#cb78-11" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The leaves, left to right. -/</span></span>
+<span id="cb78-12"><a href="#cb78-12" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> leaves : Assoc ι → List ι</span>
+<span id="cb78-13"><a href="#cb78-13" aria-hidden="true" tabindex="-1"></a>  | leaf i =&gt; [i]</span>
+<span id="cb78-14"><a href="#cb78-14" aria-hidden="true" tabindex="-1"></a>  | node l r =&gt; leaves l ++ leaves r</span>
+<span id="cb78-15"><a href="#cb78-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-16"><a href="#cb78-16" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The number of operations along the longest root-to-leaf path. -/</span></span>
+<span id="cb78-17"><a href="#cb78-17" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> height : Assoc ι → ℕ</span>
+<span id="cb78-18"><a href="#cb78-18" aria-hidden="true" tabindex="-1"></a>  | leaf _ =&gt; <span class="dv">0</span></span>
+<span id="cb78-19"><a href="#cb78-19" aria-hidden="true" tabindex="-1"></a>  | node l r =&gt; max (height l) (height r) + <span class="dv">1</span></span>
+<span id="cb78-20"><a href="#cb78-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-21"><a href="#cb78-21" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The number of internal nodes: the number of operations the tree performs. -/</span></span>
+<span id="cb78-22"><a href="#cb78-22" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> nodes : Assoc ι → ℕ</span>
+<span id="cb78-23"><a href="#cb78-23" aria-hidden="true" tabindex="-1"></a>  | leaf _ =&gt; <span class="dv">0</span></span>
+<span id="cb78-24"><a href="#cb78-24" aria-hidden="true" tabindex="-1"></a>  | node l r =&gt; nodes l + nodes r + <span class="dv">1</span></span>
+<span id="cb78-25"><a href="#cb78-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-26"><a href="#cb78-26" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nodes_add_one (t : Assoc ι) : t.nodes + <span class="dv">1</span> = t.leaves.length := <span class="kw">by</span></span>
+<span id="cb78-27"><a href="#cb78-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> t <span class="kw">with</span></span>
+<span id="cb78-28"><a href="#cb78-28" aria-hidden="true" tabindex="-1"></a>  | leaf i =&gt; <span class="cf">rfl</span></span>
+<span id="cb78-29"><a href="#cb78-29" aria-hidden="true" tabindex="-1"></a>  | node l r ihl ihr =&gt; <span class="cf">simp</span> only [nodes, leaves, List.length_append]; <span class="cf">omega</span></span>
+<span id="cb78-30"><a href="#cb78-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-31"><a href="#cb78-31" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> height_le_nodes (t : Assoc ι) : t.height ≤ t.nodes := <span class="kw">by</span></span>
+<span id="cb78-32"><a href="#cb78-32" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> t <span class="kw">with</span></span>
+<span id="cb78-33"><a href="#cb78-33" aria-hidden="true" tabindex="-1"></a>  | leaf i =&gt; <span class="cf">exact</span> le_rfl</span>
+<span id="cb78-34"><a href="#cb78-34" aria-hidden="true" tabindex="-1"></a>  | node l r ihl ihr =&gt; <span class="cf">simp</span> only [height, nodes]; <span class="cf">omega</span></span>
+<span id="cb78-35"><a href="#cb78-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-36"><a href="#cb78-36" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> height_add_one_le (t : Assoc ι) : t.height + <span class="dv">1</span> ≤ t.leaves.length := <span class="kw">by</span></span>
+<span id="cb78-37"><a href="#cb78-37" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := t.nodes_add_one; <span class="kw">have</span> := t.height_le_nodes; <span class="cf">omega</span></span>
+<span id="cb78-38"><a href="#cb78-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-39"><a href="#cb78-39" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> Assoc</span>
+<span id="cb78-40"><a href="#cb78-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-41"><a href="#cb78-41" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `c` is a value computed for the sum of the leaf values `x i` of `t`, combined in the</span></span>
+<span id="cb78-42"><a href="#cb78-42" aria-hidden="true" tabindex="-1"></a><span class="do">association `t` with every addition rounded in the standard model. -/</span></span>
+<span id="cb78-43"><a href="#cb78-43" aria-hidden="true" tabindex="-1"></a><span class="kw">inductive</span> SumRun (u : ℝ) {ι : <span class="kw">Type</span>} (x : ι → ℝ) : Assoc ι → ℝ → <span class="kw">Prop</span></span>
+<span id="cb78-44"><a href="#cb78-44" aria-hidden="true" tabindex="-1"></a>  | leaf (i : ι) : SumRun u x (.leaf i) (x i)</span>
+<span id="cb78-45"><a href="#cb78-45" aria-hidden="true" tabindex="-1"></a>  | node {l r : Assoc ι} {cl cr c : ℝ} : SumRun u x l cl → SumRun u x r cr →</span>
+<span id="cb78-46"><a href="#cb78-46" aria-hidden="true" tabindex="-1"></a>      Rounded u (cl + cr) c → SumRun u x (.node l r) c</span>
+<span id="cb78-47"><a href="#cb78-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-48"><a href="#cb78-48" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `c` is a value computed for the product of the leaf values of `t`, combined in the</span></span>
+<span id="cb78-49"><a href="#cb78-49" aria-hidden="true" tabindex="-1"></a><span class="do">association `t` with every multiplication rounded in the standard model. -/</span></span>
+<span id="cb78-50"><a href="#cb78-50" aria-hidden="true" tabindex="-1"></a><span class="kw">inductive</span> ProdRun (u : ℝ) {ι : <span class="kw">Type</span>} (x : ι → ℝ) : Assoc ι → ℝ → <span class="kw">Prop</span></span>
+<span id="cb78-51"><a href="#cb78-51" aria-hidden="true" tabindex="-1"></a>  | leaf (i : ι) : ProdRun u x (.leaf i) (x i)</span>
+<span id="cb78-52"><a href="#cb78-52" aria-hidden="true" tabindex="-1"></a>  | node {l r : Assoc ι} {cl cr c : ℝ} : ProdRun u x l cl → ProdRun u x r cr →</span>
+<span id="cb78-53"><a href="#cb78-53" aria-hidden="true" tabindex="-1"></a>      Rounded u (cl * cr) c → ProdRun u x (.node l r) c</span>
+<span id="cb78-54"><a href="#cb78-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-55"><a href="#cb78-55" aria-hidden="true" tabindex="-1"></a><span class="kw">variable</span> {ι : <span class="kw">Type</span>}</span>
+<span id="cb78-56"><a href="#cb78-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-57"><a href="#cb78-57" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> sum_map_nonneg {l : List ι} {y : ι → ℝ} (h : ∀ i ∈ l, <span class="dv">0</span> ≤ y i) : <span class="dv">0</span> ≤ (l.map y).sum :=</span>
+<span id="cb78-58"><a href="#cb78-58" aria-hidden="true" tabindex="-1"></a>  List.sum_nonneg (<span class="kw">fun</span> _ hz =&gt; <span class="kw">by</span></span>
+<span id="cb78-59"><a href="#cb78-59" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨i, hi, rfl⟩ := List.mem_map.mp hz</span>
+<span id="cb78-60"><a href="#cb78-60" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> h i hi)</span>
+<span id="cb78-61"><a href="#cb78-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-62"><a href="#cb78-62" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> prod_map_nonneg {l : List ι} {y : ι → ℝ} (h : ∀ i ∈ l, <span class="dv">0</span> ≤ y i) : <span class="dv">0</span> ≤ (l.map y).prod :=</span>
+<span id="cb78-63"><a href="#cb78-63" aria-hidden="true" tabindex="-1"></a>  List.prod_nonneg (<span class="kw">fun</span> _ hz =&gt; <span class="kw">by</span></span>
+<span id="cb78-64"><a href="#cb78-64" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨i, hi, rfl⟩ := List.mem_map.mp hz</span>
+<span id="cb78-65"><a href="#cb78-65" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> h i hi)</span>
+<span id="cb78-66"><a href="#cb78-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-67"><a href="#cb78-67" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Computed sums.** If every leaf approximates a nonnegative exact value to relative</span></span>
+<span id="cb78-68"><a href="#cb78-68" aria-hidden="true" tabindex="-1"></a><span class="do">`γ a`, a sum computed in the association `t` approximates the exact sum to relative</span></span>
+<span id="cb78-69"><a href="#cb78-69" aria-hidden="true" tabindex="-1"></a><span class="do">`γ (a + height t)`. -/</span></span>
+<span id="cb78-70"><a href="#cb78-70" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> SumRun.within (hu : <span class="dv">0</span> ≤ u) {x y : ι → ℝ} {a : ℕ} {t : Assoc ι} {c : ℝ}</span>
+<span id="cb78-71"><a href="#cb78-71" aria-hidden="true" tabindex="-1"></a>    (h : SumRun u x t c) (hy : ∀ i ∈ t.leaves, <span class="dv">0</span> ≤ y i ∧ RelWithin (gamma u a) (y i) (x i)) :</span>
+<span id="cb78-72"><a href="#cb78-72" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (a + t.height)) (t.leaves.map y).sum c := <span class="kw">by</span></span>
+<span id="cb78-73"><a href="#cb78-73" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> h <span class="kw">with</span></span>
+<span id="cb78-74"><a href="#cb78-74" aria-hidden="true" tabindex="-1"></a>  | leaf i =&gt;</span>
+<span id="cb78-75"><a href="#cb78-75" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [Assoc.leaves, Assoc.height] <span class="kw">using</span> (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves])).<span class="dv">2</span></span>
+<span id="cb78-76"><a href="#cb78-76" aria-hidden="true" tabindex="-1"></a>  | @node l r cl cr c _ _ hc ihl ihr =&gt;</span>
+<span id="cb78-77"><a href="#cb78-77" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hl := ihl (<span class="kw">fun</span> i hi =&gt; hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi]))</span>
+<span id="cb78-78"><a href="#cb78-78" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hr := ihr (<span class="kw">fun</span> i hi =&gt; hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi]))</span>
+<span id="cb78-79"><a href="#cb78-79" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> nl : <span class="dv">0</span> ≤ (l.leaves.map y).sum :=</span>
+<span id="cb78-80"><a href="#cb78-80" aria-hidden="true" tabindex="-1"></a>      sum_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi])).<span class="dv">1</span></span>
+<span id="cb78-81"><a href="#cb78-81" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> nr : <span class="dv">0</span> ≤ (r.leaves.map y).sum :=</span>
+<span id="cb78-82"><a href="#cb78-82" aria-hidden="true" tabindex="-1"></a>      sum_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi])).<span class="dv">1</span></span>
+<span id="cb78-83"><a href="#cb78-83" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hsum := (hl.mono (gamma_mono hu (<span class="kw">show</span> a + l.height ≤ a + max l.height r.height <span class="kw">by</span> <span class="cf">omega</span>))</span>
+<span id="cb78-84"><a href="#cb78-84" aria-hidden="true" tabindex="-1"></a>      nl).add (hr.mono (gamma_mono hu (<span class="kw">show</span> a + r.height ≤ a + max l.height r.height <span class="kw">by</span> <span class="cf">omega</span>)) nr)</span>
+<span id="cb78-85"><a href="#cb78-85" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := hsum.round_gamma hu (add_nonneg nl nr) hc</span>
+<span id="cb78-86"><a href="#cb78-86" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [Assoc.leaves, Assoc.height, List.map_append, List.sum_append, add_assoc] <span class="kw">using</span> this</span>
+<span id="cb78-87"><a href="#cb78-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-88"><a href="#cb78-88" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Computed products.** If leaf `i` approximates a nonnegative exact value to relative</span></span>
+<span id="cb78-89"><a href="#cb78-89" aria-hidden="true" tabindex="-1"></a><span class="do">`γ (e i)`, a product computed in the association `t` approximates the exact product to relative</span></span>
+<span id="cb78-90"><a href="#cb78-90" aria-hidden="true" tabindex="-1"></a><span class="do">`γ (Σ e i + nodes t)`, whatever the association. -/</span></span>
+<span id="cb78-91"><a href="#cb78-91" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> ProdRun.within (hu : <span class="dv">0</span> ≤ u) {x y : ι → ℝ} {e : ι → ℕ} {t : Assoc ι} {c : ℝ}</span>
+<span id="cb78-92"><a href="#cb78-92" aria-hidden="true" tabindex="-1"></a>    (h : ProdRun u x t c) (hy : ∀ i ∈ t.leaves, <span class="dv">0</span> ≤ y i ∧ RelWithin (gamma u (e i)) (y i) (x i)) :</span>
+<span id="cb78-93"><a href="#cb78-93" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u ((t.leaves.map e).sum + t.nodes)) (t.leaves.map y).prod c := <span class="kw">by</span></span>
+<span id="cb78-94"><a href="#cb78-94" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> h <span class="kw">with</span></span>
+<span id="cb78-95"><a href="#cb78-95" aria-hidden="true" tabindex="-1"></a>  | leaf i =&gt;</span>
+<span id="cb78-96"><a href="#cb78-96" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [Assoc.leaves, Assoc.nodes] <span class="kw">using</span> (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves])).<span class="dv">2</span></span>
+<span id="cb78-97"><a href="#cb78-97" aria-hidden="true" tabindex="-1"></a>  | @node l r cl cr c _ _ hc ihl ihr =&gt;</span>
+<span id="cb78-98"><a href="#cb78-98" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hl := ihl (<span class="kw">fun</span> i hi =&gt; hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi]))</span>
+<span id="cb78-99"><a href="#cb78-99" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hr := ihr (<span class="kw">fun</span> i hi =&gt; hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi]))</span>
+<span id="cb78-100"><a href="#cb78-100" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> nl : <span class="dv">0</span> ≤ (l.leaves.map y).prod :=</span>
+<span id="cb78-101"><a href="#cb78-101" aria-hidden="true" tabindex="-1"></a>      prod_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi])).<span class="dv">1</span></span>
+<span id="cb78-102"><a href="#cb78-102" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> nr : <span class="dv">0</span> ≤ (r.leaves.map y).prod :=</span>
+<span id="cb78-103"><a href="#cb78-103" aria-hidden="true" tabindex="-1"></a>      prod_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi])).<span class="dv">1</span></span>
+<span id="cb78-104"><a href="#cb78-104" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := (hl.mul_gamma hu hr nl nr).round_gamma hu (mul_nonneg nl nr) hc</span>
+<span id="cb78-105"><a href="#cb78-105" aria-hidden="true" tabindex="-1"></a>    convert this <span class="kw">using</span> <span class="dv">2</span></span>
+<span id="cb78-106"><a href="#cb78-106" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> only [Assoc.leaves, Assoc.nodes, List.map_append, List.sum_append]; <span class="cf">ring</span></span>
+<span id="cb78-107"><a href="#cb78-107" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">simp</span> [Assoc.leaves, List.map_append, List.prod_append]</span></code></pre></div>
+<h2 id="sums-and-products-of-lists-in-any-order-and-association">Sums
+and products of lists, in any order and association</h2>
+<div class="sourceCode" id="cb79"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `c` is a computed sum of the values `x i`, `i ∈ l`: `0` for the empty list, and otherwise a</span></span>
+<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a><span class="do">`SumRun` over some association of some reordering of `l`. -/</span></span>
+<span id="cb79-3"><a href="#cb79-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> CompSum (u : ℝ) (x : ι → ℝ) (l : List ι) (c : ℝ) : <span class="kw">Prop</span> :=</span>
+<span id="cb79-4"><a href="#cb79-4" aria-hidden="true" tabindex="-1"></a>  (l = [] ∧ c = <span class="dv">0</span>) ∨ ∃ t : Assoc ι, t.leaves.Perm l ∧ SumRun u x t c</span>
+<span id="cb79-5"><a href="#cb79-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-6"><a href="#cb79-6" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `c` is a computed product of the values `x i`, `i ∈ l`: `1` for the empty list, and</span></span>
+<span id="cb79-7"><a href="#cb79-7" aria-hidden="true" tabindex="-1"></a><span class="do">otherwise a `ProdRun` over some association of some reordering of `l`. -/</span></span>
+<span id="cb79-8"><a href="#cb79-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> CompProd (u : ℝ) (x : ι → ℝ) (l : List ι) (c : ℝ) : <span class="kw">Prop</span> :=</span>
+<span id="cb79-9"><a href="#cb79-9" aria-hidden="true" tabindex="-1"></a>  (l = [] ∧ c = <span class="dv">1</span>) ∨ ∃ t : Assoc ι, t.leaves.Perm l ∧ ProdRun u x t c</span>
+<span id="cb79-10"><a href="#cb79-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-11"><a href="#cb79-11" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> CompSum.within (hu : <span class="dv">0</span> ≤ u) {x y : ι → ℝ} {a : ℕ} {l : List ι} {c : ℝ}</span>
+<span id="cb79-12"><a href="#cb79-12" aria-hidden="true" tabindex="-1"></a>    (h : CompSum u x l c) (hy : ∀ i ∈ l, <span class="dv">0</span> ≤ y i ∧ RelWithin (gamma u a) (y i) (x i)) :</span>
+<span id="cb79-13"><a href="#cb79-13" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (a + (l.length - <span class="dv">1</span>))) (l.map y).sum c := <span class="kw">by</span></span>
+<span id="cb79-14"><a href="#cb79-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rcases</span> h <span class="kw">with</span> ⟨rfl, rfl⟩ | ⟨t, hp, ht⟩</span>
+<span id="cb79-15"><a href="#cb79-15" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">simp</span> [RelWithin]</span>
+<span id="cb79-16"><a href="#cb79-16" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> h1 := ht.within hu (<span class="kw">fun</span> i hi =&gt; hy i (hp.subset hi))</span>
+<span id="cb79-17"><a href="#cb79-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hlen := t.height_add_one_le</span>
+<span id="cb79-18"><a href="#cb79-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hp.length_eq] <span class="kw">at</span> hlen</span>
+<span id="cb79-19"><a href="#cb79-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← (hp.map y).sum_eq]</span>
+<span id="cb79-20"><a href="#cb79-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> h1.mono (gamma_mono hu (<span class="kw">by</span> <span class="cf">omega</span>))</span>
+<span id="cb79-21"><a href="#cb79-21" aria-hidden="true" tabindex="-1"></a>      (sum_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (hp.subset hi)).<span class="dv">1</span>)</span>
+<span id="cb79-22"><a href="#cb79-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-23"><a href="#cb79-23" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> CompProd.within (hu : <span class="dv">0</span> ≤ u) {x y : ι → ℝ} {e : ι → ℕ} {l : List ι} {c : ℝ}</span>
+<span id="cb79-24"><a href="#cb79-24" aria-hidden="true" tabindex="-1"></a>    (h : CompProd u x l c) (hy : ∀ i ∈ l, <span class="dv">0</span> ≤ y i ∧ RelWithin (gamma u (e i)) (y i) (x i)) :</span>
+<span id="cb79-25"><a href="#cb79-25" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u ((l.map e).sum + (l.length - <span class="dv">1</span>))) (l.map y).prod c := <span class="kw">by</span></span>
+<span id="cb79-26"><a href="#cb79-26" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rcases</span> h <span class="kw">with</span> ⟨rfl, rfl⟩ | ⟨t, hp, ht⟩</span>
+<span id="cb79-27"><a href="#cb79-27" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">simp</span> [RelWithin, gamma_zero]</span>
+<span id="cb79-28"><a href="#cb79-28" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> h1 := ht.within hu (e := e) (<span class="kw">fun</span> i hi =&gt; hy i (hp.subset hi))</span>
+<span id="cb79-29"><a href="#cb79-29" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hlen := t.nodes_add_one</span>
+<span id="cb79-30"><a href="#cb79-30" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hp.length_eq] <span class="kw">at</span> hlen</span>
+<span id="cb79-31"><a href="#cb79-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← (hp.map y).prod_eq, ← (hp.map e).sum_eq]</span>
+<span id="cb79-32"><a href="#cb79-32" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rwa</span> [<span class="kw">show</span> t.nodes = l.length - <span class="dv">1</span> <span class="kw">by</span> <span class="cf">omega</span>] <span class="kw">at</span> h1</span>
+<span id="cb79-33"><a href="#cb79-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-34"><a href="#cb79-34" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Products.** A product of `k` nonnegative numbers computed in any order and association</span></span>
+<span id="cb79-35"><a href="#cb79-35" aria-hidden="true" tabindex="-1"></a><span class="do">under the standard model is within relative `γ (k - 1)` of the exact product. -/</span></span>
+<span id="cb79-36"><a href="#cb79-36" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> compProd_forward_error (hu : <span class="dv">0</span> ≤ u) {y : ι → ℝ} {l : List ι} {c : ℝ}</span>
+<span id="cb79-37"><a href="#cb79-37" aria-hidden="true" tabindex="-1"></a>    (hy : ∀ i ∈ l, <span class="dv">0</span> ≤ y i) (h : CompProd u y l c) :</span>
+<span id="cb79-38"><a href="#cb79-38" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (l.length - <span class="dv">1</span>)) (l.map y).prod c := <span class="kw">by</span></span>
+<span id="cb79-39"><a href="#cb79-39" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := h.within hu (e := <span class="kw">fun</span> _ =&gt; <span class="dv">0</span>)</span>
+<span id="cb79-40"><a href="#cb79-40" aria-hidden="true" tabindex="-1"></a>    (<span class="kw">fun</span> i hi =&gt; ⟨hy i hi, relWithin_refl _ (<span class="kw">by</span> <span class="cf">simp</span> [gamma_zero]) (hy i hi)⟩)</span>
+<span id="cb79-41"><a href="#cb79-41" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simpa</span> <span class="kw">using</span> this</span>
+<span id="cb79-42"><a href="#cb79-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-43"><a href="#cb79-43" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Sums, in any association.** For every association tree `t` with `n` leaves, a sum of</span></span>
+<span id="cb79-44"><a href="#cb79-44" aria-hidden="true" tabindex="-1"></a><span class="do">nonnegative numbers computed along `t` under the standard model is within relative `γ (n - 1)`</span></span>
+<span id="cb79-45"><a href="#cb79-45" aria-hidden="true" tabindex="-1"></a><span class="do">of the exact sum; more sharply, within `γ (height t)`. -/</span></span>
+<span id="cb79-46"><a href="#cb79-46" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> sumRun_forward_error (hu : <span class="dv">0</span> ≤ u) {y : ι → ℝ} (t : Assoc ι) {c : ℝ}</span>
+<span id="cb79-47"><a href="#cb79-47" aria-hidden="true" tabindex="-1"></a>    (hy : ∀ i ∈ t.leaves, <span class="dv">0</span> ≤ y i) (h : SumRun u y t c) :</span>
+<span id="cb79-48"><a href="#cb79-48" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u t.height) (t.leaves.map y).sum c ∧</span>
+<span id="cb79-49"><a href="#cb79-49" aria-hidden="true" tabindex="-1"></a>      RelWithin (gamma u (t.leaves.length - <span class="dv">1</span>)) (t.leaves.map y).sum c := <span class="kw">by</span></span>
+<span id="cb79-50"><a href="#cb79-50" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h1 := h.within hu (a := <span class="dv">0</span>)</span>
+<span id="cb79-51"><a href="#cb79-51" aria-hidden="true" tabindex="-1"></a>    (<span class="kw">fun</span> i hi =&gt; ⟨hy i hi, relWithin_refl _ (<span class="kw">by</span> <span class="cf">simp</span> [gamma_zero]) (hy i hi)⟩)</span>
+<span id="cb79-52"><a href="#cb79-52" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [zero_add] <span class="kw">at</span> h1</span>
+<span id="cb79-53"><a href="#cb79-53" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hn : <span class="dv">0</span> ≤ (t.leaves.map y).sum := sum_map_nonneg hy</span>
+<span id="cb79-54"><a href="#cb79-54" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> ⟨h1, h1.mono (gamma_mono hu (<span class="kw">by</span> <span class="kw">have</span> := t.height_add_one_le; <span class="cf">omega</span>)) hn⟩</span></code></pre></div>
+<h2 id="the-bridge-to-binary64">The bridge to binary64</h2>
+<div class="sourceCode" id="cb80"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="kw">section</span> Bridge</span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a><span class="kw">open</span> Binary64</span>
+<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The unit roundoff of binary64, `2 ^ -53`. -/</span></span>
+<span id="cb80-6"><a href="#cb80-6" aria-hidden="true" tabindex="-1"></a><span class="kw">noncomputable</span> <span class="kw">def</span> binary64Unit : ℝ := <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ)</span>
+<span id="cb80-7"><a href="#cb80-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-8"><a href="#cb80-8" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> binary64Unit_nonneg : <span class="dv">0</span> ≤ binary64Unit := <span class="kw">by</span> <span class="cf">unfold</span> binary64Unit; <span class="cf">positivity</span></span>
+<span id="cb80-9"><a href="#cb80-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-10"><a href="#cb80-10" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A finite word with the sign of `q` and magnitude `M * 2 ^ (E - 52)`, for a 53-bit `M` and a</span></span>
+<span id="cb80-11"><a href="#cb80-11" aria-hidden="true" tabindex="-1"></a><span class="do">normal exponent `E`, or `M ≤ 2 ^ 52` at the subnormal exponent `E = -1022`. -/</span></span>
+<span id="cb80-12"><a href="#cb80-12" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> <span class="kw">theorem</span> finite_word (q : ℚ) (M : ℕ) (E : ℤ) (hE : -<span class="dv">1022</span> ≤ E) (hE&#39; : E ≤ <span class="dv">1023</span>)</span>
+<span id="cb80-13"><a href="#cb80-13" aria-hidden="true" tabindex="-1"></a>    (hM : M ≤ <span class="dv">2</span> ^ <span class="dv">53</span>) (hsub : M &lt; <span class="dv">2</span> ^ <span class="dv">52</span> → E = -<span class="dv">1022</span>) (hno : ¬(M = <span class="dv">2</span> ^ <span class="dv">53</span> ∧ E = <span class="dv">1023</span>)) :</span>
+<span id="cb80-14"><a href="#cb80-14" aria-hidden="true" tabindex="-1"></a>    ∃ W, IsFinite W ∧ |value W - q| = abs ((M : ℚ) * <span class="dv">2</span> ^ (E - <span class="dv">52</span>) - |q|) := <span class="kw">by</span></span>
+<span id="cb80-15"><a href="#cb80-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hsub&#39; : M &lt; <span class="dv">2</span> ^ <span class="dv">52</span> → max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) = -<span class="dv">1074</span> := <span class="kw">fun</span> h =&gt; <span class="kw">by</span> <span class="cf">rw</span> [hsub h]; <span class="cf">norm_num</span></span>
+<span id="cb80-16"><a href="#cb80-16" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hlt, -, hfin⟩ := packWord_spec M E hE&#39; hM hsub&#39;</span>
+<span id="cb80-17"><a href="#cb80-17" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hf, hmag, -⟩ := hfin hno</span>
+<span id="cb80-18"><a href="#cb80-18" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [<span class="kw">show</span> max (E - <span class="dv">52</span>) (-<span class="dv">1074</span>) = E - <span class="dv">52</span> <span class="kw">by</span> <span class="cf">omega</span>] <span class="kw">at</span> hmag</span>
+<span id="cb80-19"><a href="#cb80-19" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨h64, -, hfield, -, -, hval⟩ := signed_word (q &lt; <span class="dv">0</span>) (packWord M E) hlt</span>
+<span id="cb80-20"><a href="#cb80-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨_, ⟨h64, <span class="kw">by</span> <span class="cf">rw</span> [hfield]; <span class="cf">exact</span> hf⟩, ?_⟩</span>
+<span id="cb80-21"><a href="#cb80-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hval, hmag]</span>
+<span id="cb80-22"><a href="#cb80-22" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> hq : q &lt; <span class="dv">0</span></span>
+<span id="cb80-23"><a href="#cb80-23" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_pos hq, abs_of_neg hq, <span class="kw">show</span> -((M : ℚ) * <span class="dv">2</span> ^ (E - <span class="dv">52</span>)) - q =</span>
+<span id="cb80-24"><a href="#cb80-24" aria-hidden="true" tabindex="-1"></a>      -((M : ℚ) * <span class="dv">2</span> ^ (E - <span class="dv">52</span>) - -q) <span class="kw">by</span> <span class="cf">ring</span>, abs_neg]</span>
+<span id="cb80-25"><a href="#cb80-25" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [if_neg hq, abs_of_nonneg (not_lt.mp hq)]</span>
+<span id="cb80-26"><a href="#cb80-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-27"><a href="#cb80-27" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Rounding `t` to the nearest integer: the floor of `t + 1/2` is within `1/2` of `t`. -/</span></span>
+<span id="cb80-28"><a href="#cb80-28" aria-hidden="true" tabindex="-1"></a><span class="kw">private</span> <span class="kw">theorem</span> floor_half (t : ℚ) (ht : <span class="dv">0</span> ≤ t) :</span>
+<span id="cb80-29"><a href="#cb80-29" aria-hidden="true" tabindex="-1"></a>    |((⌊t + <span class="dv">1</span> / <span class="dv">2</span>⌋₊ : ℕ) : ℚ) - t| ≤ <span class="dv">1</span> / <span class="dv">2</span> ∧ ((⌊t + <span class="dv">1</span> / <span class="dv">2</span>⌋₊ : ℕ) : ℚ) ≤ t + <span class="dv">1</span> / <span class="dv">2</span> := <span class="kw">by</span></span>
+<span id="cb80-30"><a href="#cb80-30" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h1 := Nat.floor_le (<span class="kw">show</span> <span class="dv">0</span> ≤ t + <span class="dv">1</span> / <span class="dv">2</span> <span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb80-31"><a href="#cb80-31" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h2 := Nat.lt_floor_add_one (t + <span class="dv">1</span> / <span class="dv">2</span>)</span>
+<span id="cb80-32"><a href="#cb80-32" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> ⟨abs_le.mpr ⟨by <span class="cf">linarith</span>, <span class="kw">by</span> linarith⟩, h1⟩</span>
+<span id="cb80-33"><a href="#cb80-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-34"><a href="#cb80-34" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> exponentiation.threshold <span class="dv">1100</span> <span class="kw">in</span></span>
+<span id="cb80-35"><a href="#cb80-35" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **The bridge, normal range.** A word that IEEE 754 round-to-nearest delivers for a rational</span></span>
+<span id="cb80-36"><a href="#cb80-36" aria-hidden="true" tabindex="-1"></a><span class="do">`q` with `2 ^ -1022 ≤ |q| &lt; overflowThreshold` has relative error at most `2 ^ -53`. The proof</span></span>
+<span id="cb80-37"><a href="#cb80-37" aria-hidden="true" tabindex="-1"></a><span class="do">exhibits a finite word within `2 ^ -53 |q|` of `q` and applies `RoundsTo.nearest`. -/</span></span>
+<span id="cb80-38"><a href="#cb80-38" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> roundsTo_relative (q : ℚ) (w : ℕ) (hw : RoundsTo q w)</span>
+<span id="cb80-39"><a href="#cb80-39" aria-hidden="true" tabindex="-1"></a>    (hlo : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) ≤ |q|) (hhi : |q| &lt; overflowThreshold) :</span>
+<span id="cb80-40"><a href="#cb80-40" aria-hidden="true" tabindex="-1"></a>    |value w - q| ≤ <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * |q| := <span class="kw">by</span></span>
+<span id="cb80-41"><a href="#cb80-41" aria-hidden="true" tabindex="-1"></a>  set a := |q| <span class="kw">with</span> ha</span>
+<span id="cb80-42"><a href="#cb80-42" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hapos : <span class="dv">0</span> &lt; a := lt_of_lt_of_le (<span class="kw">by</span> <span class="cf">positivity</span>) hlo</span>
+<span id="cb80-43"><a href="#cb80-43" aria-hidden="true" tabindex="-1"></a>  set E := Int.log <span class="dv">2</span> a <span class="kw">with</span> hEdef</span>
+<span id="cb80-44"><a href="#cb80-44" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> l1 : (<span class="dv">2</span> : ℚ) ^ E ≤ a := Int.zpow_log_le_self (b := <span class="dv">2</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>) hapos</span>
+<span id="cb80-45"><a href="#cb80-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> l2 : a &lt; (<span class="dv">2</span> : ℚ) ^ (E + <span class="dv">1</span>) := Int.lt_zpow_succ_log_self (b := <span class="dv">2</span>) (<span class="kw">by</span> <span class="cf">norm_num</span>) a</span>
+<span id="cb80-46"><a href="#cb80-46" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr : overflowThreshold = (<span class="dv">2</span> ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span>) * <span class="dv">2</span> ^ (<span class="dv">971</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb80-47"><a href="#cb80-47" aria-hidden="true" tabindex="-1"></a>    <span class="cf">norm_num</span> [overflowThreshold]</span>
+<span id="cb80-48"><a href="#cb80-48" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hE : -<span class="dv">1022</span> ≤ E := <span class="kw">by</span></span>
+<span id="cb80-49"><a href="#cb80-49" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_contra</span> h</span>
+<span id="cb80-50"><a href="#cb80-50" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) ^ (E + <span class="dv">1</span>) ≤ <span class="dv">2</span> ^ (-<span class="dv">1022</span> : ℤ) := zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb80-51"><a href="#cb80-51" aria-hidden="true" tabindex="-1"></a>    <span class="cf">linarith</span></span>
+<span id="cb80-52"><a href="#cb80-52" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hE&#39; : E ≤ <span class="dv">1023</span> := <span class="kw">by</span></span>
+<span id="cb80-53"><a href="#cb80-53" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_contra</span> h</span>
+<span id="cb80-54"><a href="#cb80-54" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) ^ (<span class="dv">1024</span> : ℤ) ≤ <span class="dv">2</span> ^ E := zpow_le_zpow_right₀ (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb80-55"><a href="#cb80-55" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h2 : overflowThreshold &lt; (<span class="dv">2</span> : ℚ) ^ (<span class="dv">1024</span> : ℤ) := <span class="kw">by</span> <span class="cf">rw</span> [hthr]; <span class="cf">norm_num</span></span>
+<span id="cb80-56"><a href="#cb80-56" aria-hidden="true" tabindex="-1"></a>    <span class="cf">linarith</span></span>
+<span id="cb80-57"><a href="#cb80-57" aria-hidden="true" tabindex="-1"></a>  set s : ℤ := E - <span class="dv">52</span> <span class="kw">with</span> hs</span>
+<span id="cb80-58"><a href="#cb80-58" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb80-59"><a href="#cb80-59" aria-hidden="true" tabindex="-1"></a>  set t := a / <span class="dv">2</span> ^ s <span class="kw">with</span> ht</span>
+<span id="cb80-60"><a href="#cb80-60" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hta : a = t * <span class="dv">2</span> ^ s := <span class="kw">by</span> <span class="cf">rw</span> [ht]; <span class="cf">field_simp</span></span>
+<span id="cb80-61"><a href="#cb80-61" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> ht52 : (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> ≤ t := <span class="kw">by</span></span>
+<span id="cb80-62"><a href="#cb80-62" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [ht, le_div_iff₀ hp]</span>
+<span id="cb80-63"><a href="#cb80-63" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> * <span class="dv">2</span> ^ s = <span class="dv">2</span> ^ E := <span class="kw">by</span></span>
+<span id="cb80-64"><a href="#cb80-64" aria-hidden="true" tabindex="-1"></a>          <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> = <span class="dv">2</span> ^ (<span class="dv">52</span> : ℤ) <span class="kw">by</span> <span class="cf">norm_num</span>, ← zpow_add₀ two_ne_zero]</span>
+<span id="cb80-65"><a href="#cb80-65" aria-hidden="true" tabindex="-1"></a>          <span class="cf">congr</span> <span class="dv">1</span>; <span class="cf">omega</span></span>
+<span id="cb80-66"><a href="#cb80-66" aria-hidden="true" tabindex="-1"></a>      _ ≤ a := l1</span>
+<span id="cb80-67"><a href="#cb80-67" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> ht53 : t &lt; <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb80-68"><a href="#cb80-68" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [ht, div_lt_iff₀ hp]</span>
+<span id="cb80-69"><a href="#cb80-69" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> a &lt; <span class="dv">2</span> ^ (E + <span class="dv">1</span>) := l2</span>
+<span id="cb80-70"><a href="#cb80-70" aria-hidden="true" tabindex="-1"></a>      _ = <span class="dv">2</span> ^ <span class="dv">53</span> * <span class="dv">2</span> ^ s := <span class="kw">by</span></span>
+<span id="cb80-71"><a href="#cb80-71" aria-hidden="true" tabindex="-1"></a>          <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ <span class="dv">53</span> = <span class="dv">2</span> ^ (<span class="dv">53</span> : ℤ) <span class="kw">by</span> <span class="cf">norm_num</span>, ← zpow_add₀ two_ne_zero]</span>
+<span id="cb80-72"><a href="#cb80-72" aria-hidden="true" tabindex="-1"></a>          <span class="cf">congr</span> <span class="dv">1</span>; <span class="cf">omega</span></span>
+<span id="cb80-73"><a href="#cb80-73" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hM, hMle⟩ := floor_half t (<span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb80-74"><a href="#cb80-74" aria-hidden="true" tabindex="-1"></a>  set M := ⌊t + <span class="dv">1</span> / <span class="dv">2</span>⌋₊ <span class="kw">with</span> hMdef</span>
+<span id="cb80-75"><a href="#cb80-75" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hM52 : <span class="dv">2</span> ^ <span class="dv">52</span> ≤ M := Nat.le_floor (<span class="kw">by</span> <span class="cf">push_cast</span>; <span class="cf">linarith</span>)</span>
+<span id="cb80-76"><a href="#cb80-76" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hM53 : M ≤ <span class="dv">2</span> ^ <span class="dv">53</span> := <span class="kw">by</span></span>
+<span id="cb80-77"><a href="#cb80-77" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (M : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">53</span> + <span class="dv">1</span> := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb80-78"><a href="#cb80-78" aria-hidden="true" tabindex="-1"></a>    exact_mod_cast Nat.lt_succ_iff.mp (<span class="kw">by</span> exact_mod_cast this)</span>
+<span id="cb80-79"><a href="#cb80-79" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hno : ¬(M = <span class="dv">2</span> ^ <span class="dv">53</span> ∧ E = <span class="dv">1023</span>) := <span class="kw">by</span></span>
+<span id="cb80-80"><a href="#cb80-80" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rintro</span> ⟨h1, h2⟩</span>
+<span id="cb80-81"><a href="#cb80-81" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (<span class="dv">2</span> : ℚ) ^ <span class="dv">53</span> - <span class="dv">1</span> / <span class="dv">2</span> ≤ t := <span class="kw">by</span></span>
+<span id="cb80-82"><a href="#cb80-82" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : ((<span class="dv">2</span> ^ <span class="dv">53</span> : ℕ) : ℚ) ≤ t + <span class="dv">1</span> / <span class="dv">2</span> := h1 ▸ hMle</span>
+<span id="cb80-83"><a href="#cb80-83" aria-hidden="true" tabindex="-1"></a>      <span class="cf">push_cast</span> <span class="kw">at</span> this; <span class="cf">linarith</span></span>
+<span id="cb80-84"><a href="#cb80-84" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hs&#39; : s = <span class="dv">971</span> := <span class="kw">by</span> <span class="cf">omega</span></span>
+<span id="cb80-85"><a href="#cb80-85" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hs&#39;] <span class="kw">at</span> hta</span>
+<span id="cb80-86"><a href="#cb80-86" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : overflowThreshold ≤ a := <span class="kw">by</span></span>
+<span id="cb80-87"><a href="#cb80-87" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hthr, hta]; <span class="cf">exact</span> mul_le_mul_of_nonneg_right this (<span class="kw">by</span> <span class="cf">positivity</span>)</span>
+<span id="cb80-88"><a href="#cb80-88" aria-hidden="true" tabindex="-1"></a>    <span class="cf">linarith</span></span>
+<span id="cb80-89"><a href="#cb80-89" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨W, hW, hdist⟩ := finite_word q M E hE hE&#39; hM53 (<span class="kw">fun</span> h =&gt; absurd h (<span class="kw">by</span> <span class="cf">omega</span>)) hno</span>
+<span id="cb80-90"><a href="#cb80-90" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> le_trans (hw.nearest hhi W hW) ?_</span>
+<span id="cb80-91"><a href="#cb80-91" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hdist, ← ha, hta, ← sub_mul, abs_mul, abs_of_pos hp]</span>
+<span id="cb80-92"><a href="#cb80-92" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> |(M : ℚ) - t| * <span class="dv">2</span> ^ s ≤ <span class="dv">1</span> / <span class="dv">2</span> * <span class="dv">2</span> ^ s := mul_le_mul_of_nonneg_right hM hp.le</span>
+<span id="cb80-93"><a href="#cb80-93" aria-hidden="true" tabindex="-1"></a>    _ = <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * <span class="dv">2</span> ^ E := <span class="kw">by</span></span>
+<span id="cb80-94"><a href="#cb80-94" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← zpow_add₀ two_ne_zero, <span class="kw">show</span> (<span class="dv">1</span> : ℚ) / <span class="dv">2</span> = <span class="dv">2</span> ^ (-<span class="dv">1</span> : ℤ) <span class="kw">by</span> <span class="cf">norm_num</span>,</span>
+<span id="cb80-95"><a href="#cb80-95" aria-hidden="true" tabindex="-1"></a>          ← zpow_add₀ two_ne_zero]</span>
+<span id="cb80-96"><a href="#cb80-96" aria-hidden="true" tabindex="-1"></a>        <span class="cf">congr</span> <span class="dv">1</span>; <span class="cf">omega</span></span>
+<span id="cb80-97"><a href="#cb80-97" aria-hidden="true" tabindex="-1"></a>    _ ≤ <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * (t * <span class="dv">2</span> ^ s) := <span class="kw">by</span> <span class="cf">rw</span> [← hta]; gcongr</span>
+<span id="cb80-98"><a href="#cb80-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-99"><a href="#cb80-99" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> exponentiation.threshold <span class="dv">1100</span> <span class="kw">in</span></span>
+<span id="cb80-100"><a href="#cb80-100" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **The bridge, subnormal range.** Below `2 ^ -1022` the error is at most half the subnormal</span></span>
+<span id="cb80-101"><a href="#cb80-101" aria-hidden="true" tabindex="-1"></a><span class="do">spacing, `2 ^ -1075`: an absolute, not a relative, bound. -/</span></span>
+<span id="cb80-102"><a href="#cb80-102" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> roundsTo_subnormal (q : ℚ) (w : ℕ) (hw : RoundsTo q w)</span>
+<span id="cb80-103"><a href="#cb80-103" aria-hidden="true" tabindex="-1"></a>    (hq : |q| &lt; (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ)) : |value w - q| ≤ <span class="dv">2</span> ^ (-<span class="dv">1075</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb80-104"><a href="#cb80-104" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) &lt; overflowThreshold := <span class="kw">by</span></span>
+<span id="cb80-105"><a href="#cb80-105" aria-hidden="true" tabindex="-1"></a>    <span class="cf">norm_num</span> [overflowThreshold]</span>
+<span id="cb80-106"><a href="#cb80-106" aria-hidden="true" tabindex="-1"></a>  set a := |q| <span class="kw">with</span> ha</span>
+<span id="cb80-107"><a href="#cb80-107" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> ha0 : <span class="dv">0</span> ≤ a := abs_nonneg q</span>
+<span id="cb80-108"><a href="#cb80-108" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hp : (<span class="dv">0</span> : ℚ) &lt; <span class="dv">2</span> ^ (-<span class="dv">1074</span> : ℤ) := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb80-109"><a href="#cb80-109" aria-hidden="true" tabindex="-1"></a>  set t := a / <span class="dv">2</span> ^ (-<span class="dv">1074</span> : ℤ) <span class="kw">with</span> ht</span>
+<span id="cb80-110"><a href="#cb80-110" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hta : a = t * <span class="dv">2</span> ^ (-<span class="dv">1074</span> : ℤ) := <span class="kw">by</span> <span class="cf">rw</span> [ht]; <span class="cf">field_simp</span></span>
+<span id="cb80-111"><a href="#cb80-111" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> ht52 : t &lt; <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span></span>
+<span id="cb80-112"><a href="#cb80-112" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [ht, div_lt_iff₀ hp]</span>
+<span id="cb80-113"><a href="#cb80-113" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> a &lt; <span class="dv">2</span> ^ (-<span class="dv">1022</span> : ℤ) := hq</span>
+<span id="cb80-114"><a href="#cb80-114" aria-hidden="true" tabindex="-1"></a>      _ = <span class="dv">2</span> ^ <span class="dv">52</span> * <span class="dv">2</span> ^ (-<span class="dv">1074</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb80-115"><a href="#cb80-115" aria-hidden="true" tabindex="-1"></a>          <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">2</span> : ℚ) ^ <span class="dv">52</span> = <span class="dv">2</span> ^ (<span class="dv">52</span> : ℤ) <span class="kw">by</span> <span class="cf">norm_num</span>, ← zpow_add₀ two_ne_zero]; <span class="cf">norm_num</span></span>
+<span id="cb80-116"><a href="#cb80-116" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hM, hMle⟩ := floor_half t (div_nonneg ha0 hp.le)</span>
+<span id="cb80-117"><a href="#cb80-117" aria-hidden="true" tabindex="-1"></a>  set M := ⌊t + <span class="dv">1</span> / <span class="dv">2</span>⌋₊ <span class="kw">with</span> hMdef</span>
+<span id="cb80-118"><a href="#cb80-118" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hM52 : M ≤ <span class="dv">2</span> ^ <span class="dv">52</span> := <span class="kw">by</span></span>
+<span id="cb80-119"><a href="#cb80-119" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (M : ℚ) &lt; <span class="dv">2</span> ^ <span class="dv">52</span> + <span class="dv">1</span> := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb80-120"><a href="#cb80-120" aria-hidden="true" tabindex="-1"></a>    exact_mod_cast Nat.lt_succ_iff.mp (<span class="kw">by</span> exact_mod_cast this)</span>
+<span id="cb80-121"><a href="#cb80-121" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨W, hW, hdist⟩ := finite_word q M (-<span class="dv">1022</span>) le_rfl (<span class="kw">by</span> <span class="cf">norm_num</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb80-122"><a href="#cb80-122" aria-hidden="true" tabindex="-1"></a>    (<span class="kw">fun</span> _ =&gt; <span class="cf">rfl</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb80-123"><a href="#cb80-123" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> le_trans (hw.nearest (lt_trans hq hthr) W hW) ?_</span>
+<span id="cb80-124"><a href="#cb80-124" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hdist, ← ha, hta, <span class="kw">show</span> (-<span class="dv">1022</span> : ℤ) - <span class="dv">52</span> = -<span class="dv">1074</span> <span class="kw">by</span> <span class="cf">norm_num</span>, ← sub_mul, abs_mul,</span>
+<span id="cb80-125"><a href="#cb80-125" aria-hidden="true" tabindex="-1"></a>    abs_of_pos hp]</span>
+<span id="cb80-126"><a href="#cb80-126" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> |(M : ℚ) - t| * <span class="dv">2</span> ^ (-<span class="dv">1074</span> : ℤ) ≤ <span class="dv">1</span> / <span class="dv">2</span> * <span class="dv">2</span> ^ (-<span class="dv">1074</span> : ℤ) :=</span>
+<span id="cb80-127"><a href="#cb80-127" aria-hidden="true" tabindex="-1"></a>        mul_le_mul_of_nonneg_right hM hp.le</span>
+<span id="cb80-128"><a href="#cb80-128" aria-hidden="true" tabindex="-1"></a>    _ = _ := <span class="kw">by</span></span>
+<span id="cb80-129"><a href="#cb80-129" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [<span class="kw">show</span> (-<span class="dv">1074</span> : ℤ) = <span class="dv">1</span> + (-<span class="dv">1075</span>) <span class="kw">by</span> <span class="cf">norm_num</span>, zpow_add₀ two_ne_zero]; <span class="cf">norm_num</span></span>
+<span id="cb80-130"><a href="#cb80-130" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-131"><a href="#cb80-131" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Both ranges at once: below the overflow threshold, `|value w - q| ≤ 2 ^ -53 |q| + 2 ^ -1075`. -/</span></span>
+<span id="cb80-132"><a href="#cb80-132" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> roundsTo_error (q : ℚ) (w : ℕ) (hw : RoundsTo q w) (hhi : |q| &lt; overflowThreshold) :</span>
+<span id="cb80-133"><a href="#cb80-133" aria-hidden="true" tabindex="-1"></a>    |value w - q| ≤ <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * |q| + <span class="dv">2</span> ^ (-<span class="dv">1075</span> : ℤ) := <span class="kw">by</span></span>
+<span id="cb80-134"><a href="#cb80-134" aria-hidden="true" tabindex="-1"></a>  <span class="cf">by_cases</span> h : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) ≤ |q|</span>
+<span id="cb80-135"><a href="#cb80-135" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := roundsTo_relative q w hw h hhi</span>
+<span id="cb80-136"><a href="#cb80-136" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (<span class="dv">0</span> : ℚ) ≤ <span class="dv">2</span> ^ (-<span class="dv">1075</span> : ℤ) := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb80-137"><a href="#cb80-137" aria-hidden="true" tabindex="-1"></a>    <span class="cf">linarith</span></span>
+<span id="cb80-138"><a href="#cb80-138" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := roundsTo_subnormal q w hw (not_le.mp h)</span>
+<span id="cb80-139"><a href="#cb80-139" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : (<span class="dv">0</span> : ℚ) ≤ <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * |q| := <span class="kw">by</span> <span class="cf">positivity</span></span>
+<span id="cb80-140"><a href="#cb80-140" aria-hidden="true" tabindex="-1"></a>    <span class="cf">linarith</span></span>
+<span id="cb80-141"><a href="#cb80-141" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-142"><a href="#cb80-142" aria-hidden="true" tabindex="-1"></a><span class="kw">set_option</span> exponentiation.threshold <span class="dv">1100</span> <span class="kw">in</span></span>
+<span id="cb80-143"><a href="#cb80-143" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A correctly rounded zero is exactly zero. -/</span></span>
+<span id="cb80-144"><a href="#cb80-144" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> roundsTo_zero (w : ℕ) (hw : RoundsTo <span class="dv">0</span> w) : value w = <span class="dv">0</span> := <span class="kw">by</span></span>
+<span id="cb80-145"><a href="#cb80-145" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hthr : |(<span class="dv">0</span> : ℚ)| &lt; overflowThreshold := <span class="kw">by</span> <span class="cf">norm_num</span> [overflowThreshold]</span>
+<span id="cb80-146"><a href="#cb80-146" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h0 : IsFinite <span class="dv">0</span> := ⟨by <span class="cf">norm_num</span>, <span class="kw">by</span> <span class="cf">simp</span> [field]⟩</span>
+<span id="cb80-147"><a href="#cb80-147" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hv0 : value <span class="dv">0</span> = <span class="dv">0</span> := <span class="kw">by</span> <span class="cf">simp</span> [value, magnitude, signBit, field, fraction]</span>
+<span id="cb80-148"><a href="#cb80-148" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := hw.nearest hthr <span class="dv">0</span> h0</span>
+<span id="cb80-149"><a href="#cb80-149" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hv0, sub_zero, sub_zero, abs_zero] <span class="kw">at</span> this</span>
+<span id="cb80-150"><a href="#cb80-150" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> abs_nonpos_iff.mp this</span>
+<span id="cb80-151"><a href="#cb80-151" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-152"><a href="#cb80-152" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **The standard model holds for IEEE 754 binary64 rounding** away from underflow and</span></span>
+<span id="cb80-153"><a href="#cb80-153" aria-hidden="true" tabindex="-1"></a><span class="do">overflow: when the exact result is zero or has magnitude in `[2 ^ -1022, overflowThreshold)`,</span></span>
+<span id="cb80-154"><a href="#cb80-154" aria-hidden="true" tabindex="-1"></a><span class="do">its correctly rounded value is `Rounded binary64Unit`. -/</span></span>
+<span id="cb80-155"><a href="#cb80-155" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> roundsTo_rounded (q : ℚ) (w : ℕ) (hw : RoundsTo q w)</span>
+<span id="cb80-156"><a href="#cb80-156" aria-hidden="true" tabindex="-1"></a>    (hq : q = <span class="dv">0</span> ∨ ((<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) ≤ |q| ∧ |q| &lt; overflowThreshold)) :</span>
+<span id="cb80-157"><a href="#cb80-157" aria-hidden="true" tabindex="-1"></a>    Rounded binary64Unit (q : ℝ) (value w : ℝ) := <span class="kw">by</span></span>
+<span id="cb80-158"><a href="#cb80-158" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [rounded_iff binary64Unit_nonneg]</span>
+<span id="cb80-159"><a href="#cb80-159" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rcases</span> hq <span class="kw">with</span> <span class="cf">rfl</span> | ⟨hlo, hhi⟩</span>
+<span id="cb80-160"><a href="#cb80-160" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">simp</span> [roundsTo_zero w hw]</span>
+<span id="cb80-161"><a href="#cb80-161" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> h := roundsTo_relative q w hw hlo hhi</span>
+<span id="cb80-162"><a href="#cb80-162" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h&#39; : ((|value w - q| : ℚ) : ℝ) ≤ ((<span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * |q| : ℚ) : ℝ) := <span class="kw">by</span> exact_mod_cast h</span>
+<span id="cb80-163"><a href="#cb80-163" aria-hidden="true" tabindex="-1"></a>    <span class="cf">push_cast</span> <span class="kw">at</span> h&#39;</span>
+<span id="cb80-164"><a href="#cb80-164" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [binary64Unit] <span class="kw">using</span> h&#39;</span>
+<span id="cb80-165"><a href="#cb80-165" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-166"><a href="#cb80-166" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The same for the transcription of `_nearest_binary64`, through `nearestBinary64_roundsTo`. -/</span></span>
+<span id="cb80-167"><a href="#cb80-167" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_rounded (q : ℚ)</span>
+<span id="cb80-168"><a href="#cb80-168" aria-hidden="true" tabindex="-1"></a>    (hq : q = <span class="dv">0</span> ∨ ((<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) ≤ |q| ∧ |q| &lt; overflowThreshold)) :</span>
+<span id="cb80-169"><a href="#cb80-169" aria-hidden="true" tabindex="-1"></a>    Rounded binary64Unit (q : ℝ) (value (nearestBinary64 q) : ℝ) :=</span>
+<span id="cb80-170"><a href="#cb80-170" aria-hidden="true" tabindex="-1"></a>  roundsTo_rounded q _ (nearestBinary64_roundsTo q) hq</span>
+<span id="cb80-171"><a href="#cb80-171" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-172"><a href="#cb80-172" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_nearest_binary64` in the normal range: relative error at most `2 ^ -53`. -/</span></span>
+<span id="cb80-173"><a href="#cb80-173" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_relative (q : ℚ) (hlo : (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ) ≤ |q|)</span>
+<span id="cb80-174"><a href="#cb80-174" aria-hidden="true" tabindex="-1"></a>    (hhi : |q| &lt; overflowThreshold) :</span>
+<span id="cb80-175"><a href="#cb80-175" aria-hidden="true" tabindex="-1"></a>    |value (nearestBinary64 q) - q| ≤ <span class="dv">2</span> ^ (-<span class="dv">53</span> : ℤ) * |q| :=</span>
+<span id="cb80-176"><a href="#cb80-176" aria-hidden="true" tabindex="-1"></a>  roundsTo_relative q _ (nearestBinary64_roundsTo q) hlo hhi</span>
+<span id="cb80-177"><a href="#cb80-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-178"><a href="#cb80-178" aria-hidden="true" tabindex="-1"></a><span class="do">/-- `_nearest_binary64` in the subnormal range: absolute error at most `2 ^ -1075`. -/</span></span>
+<span id="cb80-179"><a href="#cb80-179" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> nearestBinary64_subnormal (q : ℚ) (hq : |q| &lt; (<span class="dv">2</span> : ℚ) ^ (-<span class="dv">1022</span> : ℤ)) :</span>
+<span id="cb80-180"><a href="#cb80-180" aria-hidden="true" tabindex="-1"></a>    |value (nearestBinary64 q) - q| ≤ <span class="dv">2</span> ^ (-<span class="dv">1075</span> : ℤ) :=</span>
+<span id="cb80-181"><a href="#cb80-181" aria-hidden="true" tabindex="-1"></a>  roundsTo_subnormal q _ (nearestBinary64_roundsTo q) hq</span>
+<span id="cb80-182"><a href="#cb80-182" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-183"><a href="#cb80-183" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> Bridge</span></code></pre></div>
+<h2 id="normalisation">Normalisation</h2>
+<div class="sourceCode" id="cb81"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Quotients.** If `x` approximates `y ≥ 0` to relative `α ≤ 1` and `X` approximates `Y &gt; 0`</span></span>
+<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a><span class="do">to relative `β &lt; 1`, then `x / X` approximates `y / Y` to relative `(1 + α) / (1 - β) - 1`. -/</span></span>
+<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> RelWithin.div {α β y Y x X : ℝ} (h : RelWithin α y x) (H : RelWithin β Y X)</span>
+<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a>    (hα : <span class="dv">0</span> ≤ α) (hα1 : α ≤ <span class="dv">1</span>) (hβ : <span class="dv">0</span> ≤ β) (hβ1 : β &lt; <span class="dv">1</span>) (hy : <span class="dv">0</span> ≤ y) (hY : <span class="dv">0</span> &lt; Y) :</span>
+<span id="cb81-5"><a href="#cb81-5" aria-hidden="true" tabindex="-1"></a>    RelWithin ((<span class="dv">1</span> + α) / (<span class="dv">1</span> - β) - <span class="dv">1</span>) (y / Y) (x / X) := <span class="kw">by</span></span>
+<span id="cb81-6"><a href="#cb81-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">unfold</span> RelWithin <span class="kw">at</span> *</span>
+<span id="cb81-7"><a href="#cb81-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hX1, hX2⟩ := _root_.abs_le.mp H</span>
+<span id="cb81-8"><a href="#cb81-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hx1, hx2⟩ := _root_.abs_le.mp h</span>
+<span id="cb81-9"><a href="#cb81-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hb : <span class="dv">0</span> &lt; <span class="dv">1</span> - β := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb81-10"><a href="#cb81-10" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hXpos : <span class="dv">0</span> &lt; X := <span class="kw">by</span> nlinarith</span>
+<span id="cb81-11"><a href="#cb81-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hr : <span class="dv">0</span> ≤ y / Y := div_nonneg hy hY.le</span>
+<span id="cb81-12"><a href="#cb81-12" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> up : x / X ≤ (<span class="dv">1</span> + α) / (<span class="dv">1</span> - β) * (y / Y) := <span class="kw">by</span></span>
+<span id="cb81-13"><a href="#cb81-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> x / X ≤ (<span class="dv">1</span> + α) * y / X := div_le_div_of_nonneg_right (<span class="kw">by</span> <span class="cf">linarith</span>) hXpos.le</span>
+<span id="cb81-14"><a href="#cb81-14" aria-hidden="true" tabindex="-1"></a>      _ ≤ (<span class="dv">1</span> + α) * y / ((<span class="dv">1</span> - β) * Y) :=</span>
+<span id="cb81-15"><a href="#cb81-15" aria-hidden="true" tabindex="-1"></a>          div_le_div_of_nonneg_left (<span class="kw">by</span> <span class="cf">positivity</span>) (<span class="kw">by</span> <span class="cf">positivity</span>) (<span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb81-16"><a href="#cb81-16" aria-hidden="true" tabindex="-1"></a>      _ = _ := <span class="kw">by</span> <span class="cf">field_simp</span></span>
+<span id="cb81-17"><a href="#cb81-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> key : <span class="dv">2</span> - (<span class="dv">1</span> + α) / (<span class="dv">1</span> - β) ≤ (<span class="dv">1</span> - α) / (<span class="dv">1</span> + β) := <span class="kw">by</span></span>
+<span id="cb81-18"><a href="#cb81-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h1 : (<span class="dv">0</span> : ℝ) &lt; <span class="dv">1</span> + β := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb81-19"><a href="#cb81-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [sub_le_iff_le_add, div_add_div _ _ h1.ne&#39; hb.ne&#39;, le_div_iff₀ (<span class="kw">by</span> <span class="cf">positivity</span>)]</span>
+<span id="cb81-20"><a href="#cb81-20" aria-hidden="true" tabindex="-1"></a>    nlinarith [mul_nonneg hα hβ, sq_nonneg β]</span>
+<span id="cb81-21"><a href="#cb81-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> lo : (<span class="dv">2</span> - (<span class="dv">1</span> + α) / (<span class="dv">1</span> - β)) * (y / Y) ≤ x / X := <span class="kw">by</span></span>
+<span id="cb81-22"><a href="#cb81-22" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> (<span class="dv">2</span> - (<span class="dv">1</span> + α) / (<span class="dv">1</span> - β)) * (y / Y) ≤ (<span class="dv">1</span> - α) / (<span class="dv">1</span> + β) * (y / Y) :=</span>
+<span id="cb81-23"><a href="#cb81-23" aria-hidden="true" tabindex="-1"></a>          mul_le_mul_of_nonneg_right key hr</span>
+<span id="cb81-24"><a href="#cb81-24" aria-hidden="true" tabindex="-1"></a>      _ = (<span class="dv">1</span> - α) * y / ((<span class="dv">1</span> + β) * Y) := <span class="kw">by</span> <span class="cf">field_simp</span></span>
+<span id="cb81-25"><a href="#cb81-25" aria-hidden="true" tabindex="-1"></a>      _ ≤ (<span class="dv">1</span> - α) * y / X :=</span>
+<span id="cb81-26"><a href="#cb81-26" aria-hidden="true" tabindex="-1"></a>          div_le_div_of_nonneg_left (mul_nonneg (<span class="kw">by</span> <span class="cf">linarith</span>) hy) hXpos (<span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb81-27"><a href="#cb81-27" aria-hidden="true" tabindex="-1"></a>      _ ≤ x / X := div_le_div_of_nonneg_right (<span class="kw">by</span> <span class="cf">linarith</span>) hXpos.le</span>
+<span id="cb81-28"><a href="#cb81-28" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [_root_.abs_le]</span>
+<span id="cb81-29"><a href="#cb81-29" aria-hidden="true" tabindex="-1"></a>  <span class="cf">constructor</span> &lt;;&gt; nlinarith</span>
+<span id="cb81-30"><a href="#cb81-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-31"><a href="#cb81-31" aria-hidden="true" tabindex="-1"></a><span class="kw">open</span> FiniteDistribution <span class="kw">in</span></span>
+<span id="cb81-32"><a href="#cb81-32" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Normalisation.** Exact nonnegative weights `w` with positive mass; computed weights within</span></span>
+<span id="cb81-33"><a href="#cb81-33" aria-hidden="true" tabindex="-1"></a><span class="do">relative `γ N`; a computed mass `Z`, summed in any order and association; and each posterior</span></span>
+<span id="cb81-34"><a href="#cb81-34" aria-hidden="true" tabindex="-1"></a><span class="do">entry the rounded quotient `wc a / Z`. With `K = N + |A|` and `γ K &lt; 1`, the computed mass is</span></span>
+<span id="cb81-35"><a href="#cb81-35" aria-hidden="true" tabindex="-1"></a><span class="do">within relative `γ (K - 1)` of the exact mass, and every computed posterior entry within</span></span>
+<span id="cb81-36"><a href="#cb81-36" aria-hidden="true" tabindex="-1"></a><span class="do">relative `(1 + γ K) / (1 - γ K) - 1` of the exact one. -/</span></span>
+<span id="cb81-37"><a href="#cb81-37" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> normalize_forward_error {A : <span class="kw">Type</span>} [Fintype A] (hu : <span class="dv">0</span> ≤ u) (w wc : A → ℝ)</span>
+<span id="cb81-38"><a href="#cb81-38" aria-hidden="true" tabindex="-1"></a>    (hw : ∀ a, <span class="dv">0</span> ≤ w a) (N : ℕ) (hwc : ∀ a, RelWithin (gamma u N) (w a) (wc a)) (Z : ℝ)</span>
+<span id="cb81-39"><a href="#cb81-39" aria-hidden="true" tabindex="-1"></a>    (hZ : CompSum u wc Finset.univ.toList Z) (post : A → ℝ)</span>
+<span id="cb81-40"><a href="#cb81-40" aria-hidden="true" tabindex="-1"></a>    (hpost : ∀ a, Rounded u (wc a / Z) (post a)) (hmass : <span class="dv">0</span> &lt; mass w)</span>
+<span id="cb81-41"><a href="#cb81-41" aria-hidden="true" tabindex="-1"></a>    (hsmall : gamma u (N + Fintype.card A) &lt; <span class="dv">1</span>) :</span>
+<span id="cb81-42"><a href="#cb81-42" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (N + Fintype.card A - <span class="dv">1</span>)) (mass w) Z ∧</span>
+<span id="cb81-43"><a href="#cb81-43" aria-hidden="true" tabindex="-1"></a>      ∀ a, RelWithin ((<span class="dv">1</span> + gamma u (N + Fintype.card A)) / (<span class="dv">1</span> - gamma u (N + Fintype.card A)) - <span class="dv">1</span>)</span>
+<span id="cb81-44"><a href="#cb81-44" aria-hidden="true" tabindex="-1"></a>        (w a / mass w) (post a) := <span class="kw">by</span></span>
+<span id="cb81-45"><a href="#cb81-45" aria-hidden="true" tabindex="-1"></a>  set K := N + Fintype.card A <span class="kw">with</span> hK</span>
+<span id="cb81-46"><a href="#cb81-46" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hcard : <span class="dv">0</span> &lt; Fintype.card A := <span class="kw">by</span></span>
+<span id="cb81-47"><a href="#cb81-47" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨a, -⟩ := Finset.exists_ne_zero_of_sum_ne_zero (s := Finset.univ) (f := w)</span>
+<span id="cb81-48"><a href="#cb81-48" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">by</span> <span class="cf">rw</span> [← mass]; <span class="cf">exact</span> hmass.ne&#39;)</span>
+<span id="cb81-49"><a href="#cb81-49" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> Fintype.card_pos_iff.mpr ⟨a⟩</span>
+<span id="cb81-50"><a href="#cb81-50" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hZ&#39; := hZ.within hu (y := w) (<span class="kw">fun</span> a _ =&gt; ⟨hw a, hwc a⟩)</span>
+<span id="cb81-51"><a href="#cb81-51" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [Finset.sum_map_toList, Finset.length_toList, Finset.card_univ] <span class="kw">at</span> hZ&#39;</span>
+<span id="cb81-52"><a href="#cb81-52" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hmassZ : RelWithin (gamma u (K - <span class="dv">1</span>)) (mass w) Z := <span class="kw">by</span></span>
+<span id="cb81-53"><a href="#cb81-53" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [<span class="kw">show</span> K - <span class="dv">1</span> = N + (Fintype.card A - <span class="dv">1</span>) <span class="kw">by</span> <span class="cf">omega</span>]; <span class="cf">exact</span> hZ&#39;</span>
+<span id="cb81-54"><a href="#cb81-54" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨hmassZ, <span class="kw">fun</span> a =&gt; ?_⟩</span>
+<span id="cb81-55"><a href="#cb81-55" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> g1 : gamma u N ≤ gamma u K := gamma_mono hu (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb81-56"><a href="#cb81-56" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> g2 : gamma u (K - <span class="dv">1</span>) ≤ gamma u K := gamma_mono hu (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb81-57"><a href="#cb81-57" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> g3 : gamma u (N + <span class="dv">1</span>) ≤ gamma u K := gamma_mono hu (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb81-58"><a href="#cb81-58" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hq := (hwc a).div hmassZ (gamma_nonneg hu N) (<span class="kw">by</span> <span class="cf">linarith</span>) (gamma_nonneg hu _)</span>
+<span id="cb81-59"><a href="#cb81-59" aria-hidden="true" tabindex="-1"></a>    (<span class="kw">by</span> <span class="cf">linarith</span>) (hw a) hmass</span>
+<span id="cb81-60"><a href="#cb81-60" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hr := hq.round (div_nonneg (hw a) hmass.le) hu (hpost a)</span>
+<span id="cb81-61"><a href="#cb81-61" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> hr.mono ?_ (div_nonneg (hw a) hmass.le)</span>
+<span id="cb81-62"><a href="#cb81-62" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hb : <span class="dv">0</span> &lt; <span class="dv">1</span> - gamma u K := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb81-63"><a href="#cb81-63" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hb&#39; : <span class="dv">1</span> - gamma u K ≤ <span class="dv">1</span> - gamma u (K - <span class="dv">1</span>) := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb81-64"><a href="#cb81-64" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hb&#39;&#39; : <span class="dv">0</span> &lt; <span class="dv">1</span> - gamma u (K - <span class="dv">1</span>) := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb81-65"><a href="#cb81-65" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h1 : (<span class="dv">1</span> + u) * (<span class="dv">1</span> + gamma u N) = <span class="dv">1</span> + gamma u (N + <span class="dv">1</span>) := <span class="kw">by</span></span>
+<span id="cb81-66"><a href="#cb81-66" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [one_add_gamma, one_add_gamma, pow_succ]; <span class="cf">ring</span></span>
+<span id="cb81-67"><a href="#cb81-67" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [<span class="kw">show</span> (<span class="dv">1</span> + u) * (<span class="dv">1</span> + ((<span class="dv">1</span> + gamma u N) / (<span class="dv">1</span> - gamma u (K - <span class="dv">1</span>)) - <span class="dv">1</span>)) - <span class="dv">1</span> =</span>
+<span id="cb81-68"><a href="#cb81-68" aria-hidden="true" tabindex="-1"></a>      (<span class="dv">1</span> + u) * (<span class="dv">1</span> + gamma u N) / (<span class="dv">1</span> - gamma u (K - <span class="dv">1</span>)) - <span class="dv">1</span> <span class="kw">by</span> <span class="cf">ring</span>, h1]</span>
+<span id="cb81-69"><a href="#cb81-69" aria-hidden="true" tabindex="-1"></a>  gcongr ?_ - <span class="dv">1</span></span>
+<span id="cb81-70"><a href="#cb81-70" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> (<span class="dv">1</span> + gamma u (N + <span class="dv">1</span>)) / (<span class="dv">1</span> - gamma u (K - <span class="dv">1</span>)) ≤ (<span class="dv">1</span> + gamma u K) / (<span class="dv">1</span> - gamma u (K - <span class="dv">1</span>)) :=</span>
+<span id="cb81-71"><a href="#cb81-71" aria-hidden="true" tabindex="-1"></a>        div_le_div_of_nonneg_right (<span class="kw">by</span> <span class="cf">linarith</span>) hb&#39;&#39;.le</span>
+<span id="cb81-72"><a href="#cb81-72" aria-hidden="true" tabindex="-1"></a>    _ ≤ _ := div_le_div_of_nonneg_left (<span class="kw">by</span> <span class="cf">linarith</span> [gamma_nonneg hu K]) hb hb&#39;</span></code></pre></div>
+<h2 id="variable-elimination-under-the-standard-model">Variable
+elimination under the standard model</h2>
+<div class="sourceCode" id="cb82"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="kw">open</span> FinBayesNet FinBayesNet.Factor FiniteDistribution</span>
+<span id="cb82-2"><a href="#cb82-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-3"><a href="#cb82-3" aria-hidden="true" tabindex="-1"></a><span class="kw">variable</span> {bn : FinBayesNet}</span>
+<span id="cb82-4"><a href="#cb82-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-5"><a href="#cb82-5" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A factor of the exact algebra paired with the table a floating-point run computed for it. -/</span></span>
+<span id="cb82-6"><a href="#cb82-6" aria-hidden="true" tabindex="-1"></a><span class="kw">abbrev</span> Computed (bn : FinBayesNet) := Factor bn ℝ × (bn.Assignment → ℝ)</span>
+<span id="cb82-7"><a href="#cb82-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-8"><a href="#cb82-8" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The computed factors in the bucket of `v`, selected by the exact scopes as in `bucket`. -/</span></span>
+<span id="cb82-9"><a href="#cb82-9" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cbucket (v : bn.V) (ps : List (Computed bn)) : List (Computed bn) :=</span>
+<span id="cb82-10"><a href="#cb82-10" aria-hidden="true" tabindex="-1"></a>  ps.filter (<span class="kw">fun</span> p =&gt; <span class="cf">decide</span> (v ∈ p.<span class="fl">1.</span>scope))</span>
+<span id="cb82-11"><a href="#cb82-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-12"><a href="#cb82-12" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The computed factors outside the bucket of `v`, as in `outside`. -/</span></span>
+<span id="cb82-13"><a href="#cb82-13" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> coutside (v : bn.V) (ps : List (Computed bn)) : List (Computed bn) :=</span>
+<span id="cb82-14"><a href="#cb82-14" aria-hidden="true" tabindex="-1"></a>  ps.filter (<span class="kw">fun</span> p =&gt; <span class="cf">decide</span> (v ∉ p.<span class="fl">1.</span>scope))</span>
+<span id="cb82-15"><a href="#cb82-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-16"><a href="#cb82-16" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> cbucket_fst (v : bn.V) (ps : List (Computed bn)) :</span>
+<span id="cb82-17"><a href="#cb82-17" aria-hidden="true" tabindex="-1"></a>    (cbucket v ps).map Prod.fst = bucket v (ps.map Prod.fst) := <span class="kw">by</span></span>
+<span id="cb82-18"><a href="#cb82-18" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> ps <span class="kw">with</span></span>
+<span id="cb82-19"><a href="#cb82-19" aria-hidden="true" tabindex="-1"></a>  | nil =&gt; <span class="cf">rfl</span></span>
+<span id="cb82-20"><a href="#cb82-20" aria-hidden="true" tabindex="-1"></a>  | cons p ps ih =&gt;</span>
+<span id="cb82-21"><a href="#cb82-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> h : v ∈ p.<span class="fl">1.</span>scope &lt;;&gt; <span class="cf">simp_all</span> [cbucket, bucket]</span>
+<span id="cb82-22"><a href="#cb82-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-23"><a href="#cb82-23" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> coutside_fst (v : bn.V) (ps : List (Computed bn)) :</span>
+<span id="cb82-24"><a href="#cb82-24" aria-hidden="true" tabindex="-1"></a>    (coutside v ps).map Prod.fst = outside v (ps.map Prod.fst) := <span class="kw">by</span></span>
+<span id="cb82-25"><a href="#cb82-25" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> ps <span class="kw">with</span></span>
+<span id="cb82-26"><a href="#cb82-26" aria-hidden="true" tabindex="-1"></a>  | nil =&gt; <span class="cf">rfl</span></span>
+<span id="cb82-27"><a href="#cb82-27" aria-hidden="true" tabindex="-1"></a>  | cons p ps ih =&gt;</span>
+<span id="cb82-28"><a href="#cb82-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> h : v ∈ p.<span class="fl">1.</span>scope &lt;;&gt; <span class="cf">simp_all</span> [coutside, outside]</span>
+<span id="cb82-29"><a href="#cb82-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-30"><a href="#cb82-30" aria-hidden="true" tabindex="-1"></a><span class="do">/-- One computed sum-out: every entry of `g` is a sum, computed in some order and association,</span></span>
+<span id="cb82-31"><a href="#cb82-31" aria-hidden="true" tabindex="-1"></a><span class="do">over the states `a` of `v` of values `c a`, each a product, computed in some order and</span></span>
+<span id="cb82-32"><a href="#cb82-32" aria-hidden="true" tabindex="-1"></a><span class="do">association, of the bucket&#39;s computed tables at `x` updated to `v = a`. -/</span></span>
+<span id="cb82-33"><a href="#cb82-33" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> SumOutStep (u : ℝ) (v : bn.V) (ps : List (Computed bn)) (g : bn.Assignment → ℝ) : <span class="kw">Prop</span> :=</span>
+<span id="cb82-34"><a href="#cb82-34" aria-hidden="true" tabindex="-1"></a>  ∀ x, ∃ c : bn.states v → ℝ, CompSum u c Finset.univ.toList (g x) ∧</span>
+<span id="cb82-35"><a href="#cb82-35" aria-hidden="true" tabindex="-1"></a>    ∀ a, CompProd u (<span class="kw">fun</span> p : Computed bn =&gt; p<span class="fl">.2</span> (Function.update x v a)) (cbucket v ps) (c a)</span>
+<span id="cb82-36"><a href="#cb82-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-37"><a href="#cb82-37" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **An approximate elimination run**, step for step beside `eliminateAll`: each step replaces</span></span>
+<span id="cb82-38"><a href="#cb82-38" aria-hidden="true" tabindex="-1"></a><span class="do">the bucket of `v` by the exact `sumBucket` paired with a computed table `g` satisfying</span></span>
+<span id="cb82-39"><a href="#cb82-39" aria-hidden="true" tabindex="-1"></a><span class="do">`SumOutStep`, and keeps every factor outside the bucket with its table unchanged. -/</span></span>
+<span id="cb82-40"><a href="#cb82-40" aria-hidden="true" tabindex="-1"></a><span class="kw">inductive</span> Run (u : ℝ) : List (Computed bn) → List bn.V → List (Computed bn) → <span class="kw">Prop</span></span>
+<span id="cb82-41"><a href="#cb82-41" aria-hidden="true" tabindex="-1"></a>  | nil (ps : List (Computed bn)) : Run u ps [] ps</span>
+<span id="cb82-42"><a href="#cb82-42" aria-hidden="true" tabindex="-1"></a>  | cons {v : bn.V} {vs : List bn.V} {ps out : List (Computed bn)} {g : bn.Assignment → ℝ} :</span>
+<span id="cb82-43"><a href="#cb82-43" aria-hidden="true" tabindex="-1"></a>      SumOutStep u v ps g →</span>
+<span id="cb82-44"><a href="#cb82-44" aria-hidden="true" tabindex="-1"></a>      Run u ((sumBucket v (bucket v (ps.map Prod.fst)), g) :: coutside v ps) vs out →</span>
+<span id="cb82-45"><a href="#cb82-45" aria-hidden="true" tabindex="-1"></a>      Run u ps (v :: vs) out</span>
+<span id="cb82-46"><a href="#cb82-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-47"><a href="#cb82-47" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The input factors, with their exact tables: the run starts from the CPT entries as given. -/</span></span>
+<span id="cb82-48"><a href="#cb82-48" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> inputs (fs : List (Factor bn ℝ)) : List (Computed bn) := fs.map <span class="kw">fun</span> f =&gt; (f, f.value)</span>
+<span id="cb82-49"><a href="#cb82-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-50"><a href="#cb82-50" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The run&#39;s exact half is `eliminateAll`. -/</span></span>
+<span id="cb82-51"><a href="#cb82-51" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> Run.fst {ps : List (Computed bn)} {vs : List bn.V} {out : List (Computed bn)}</span>
+<span id="cb82-52"><a href="#cb82-52" aria-hidden="true" tabindex="-1"></a>    (h : Run u ps vs out) : out.map Prod.fst = eliminateAll (ps.map Prod.fst) vs := <span class="kw">by</span></span>
+<span id="cb82-53"><a href="#cb82-53" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> h <span class="kw">with</span></span>
+<span id="cb82-54"><a href="#cb82-54" aria-hidden="true" tabindex="-1"></a>  | nil ps =&gt; <span class="cf">rfl</span></span>
+<span id="cb82-55"><a href="#cb82-55" aria-hidden="true" tabindex="-1"></a>  | @cons v vs ps out g _ _ ih =&gt;</span>
+<span id="cb82-56"><a href="#cb82-56" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [ih, List.map_cons, coutside_fst]</span>
+<span id="cb82-57"><a href="#cb82-57" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rfl</span></span>
+<span id="cb82-58"><a href="#cb82-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-59"><a href="#cb82-59" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The explicit index: `m` input factors and the summed domain sizes of the eliminated</span></span>
+<span id="cb82-60"><a href="#cb82-60" aria-hidden="true" tabindex="-1"></a><span class="do">variables, less one. -/</span></span>
+<span id="cb82-61"><a href="#cb82-61" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> veIndex (m : ℕ) (vs : List bn.V) : ℕ :=</span>
+<span id="cb82-62"><a href="#cb82-62" aria-hidden="true" tabindex="-1"></a>  m + (vs.map <span class="kw">fun</span> v =&gt; Fintype.card (bn.states v)).sum - <span class="dv">1</span></span>
+<span id="cb82-63"><a href="#cb82-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-64"><a href="#cb82-64" aria-hidden="true" tabindex="-1"></a><span class="do">/-- A computed factor with nonnegative exact entries and some uniform relative bound. -/</span></span>
+<span id="cb82-65"><a href="#cb82-65" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> Good (u : ℝ) (p : Computed bn) : <span class="kw">Prop</span> :=</span>
+<span id="cb82-66"><a href="#cb82-66" aria-hidden="true" tabindex="-1"></a>  (∀ x, <span class="dv">0</span> ≤ p.<span class="fl">1.</span>value x) ∧ ∃ n : ℕ, ∀ x, RelWithin (gamma u n) (p.<span class="fl">1.</span>value x) (p<span class="fl">.2</span> x)</span>
+<span id="cb82-67"><a href="#cb82-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-68"><a href="#cb82-68" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The least `n` with every computed entry within relative `γ n`. -/</span></span>
+<span id="cb82-69"><a href="#cb82-69" aria-hidden="true" tabindex="-1"></a><span class="kw">noncomputable</span> <span class="kw">def</span> errIndex (u : ℝ) (p : Computed bn) : ℕ :=</span>
+<span id="cb82-70"><a href="#cb82-70" aria-hidden="true" tabindex="-1"></a>  sInf {n : ℕ | ∀ x, RelWithin (gamma u n) (p.<span class="fl">1.</span>value x) (p<span class="fl">.2</span> x)}</span>
+<span id="cb82-71"><a href="#cb82-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-72"><a href="#cb82-72" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> Good.within {p : Computed bn} (h : Good u p) :</span>
+<span id="cb82-73"><a href="#cb82-73" aria-hidden="true" tabindex="-1"></a>    ∀ x, RelWithin (gamma u (errIndex u p)) (p.<span class="fl">1.</span>value x) (p<span class="fl">.2</span> x) :=</span>
+<span id="cb82-74"><a href="#cb82-74" aria-hidden="true" tabindex="-1"></a>  Nat.sInf_mem (s := {n : ℕ | ∀ x, RelWithin (gamma u n) (p.<span class="fl">1.</span>value x) (p<span class="fl">.2</span> x)}) h<span class="fl">.2</span></span>
+<span id="cb82-75"><a href="#cb82-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-76"><a href="#cb82-76" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> errIndex_le {p : Computed bn} {n : ℕ}</span>
+<span id="cb82-77"><a href="#cb82-77" aria-hidden="true" tabindex="-1"></a>    (h : ∀ x, RelWithin (gamma u n) (p.<span class="fl">1.</span>value x) (p<span class="fl">.2</span> x)) : errIndex u p ≤ n :=</span>
+<span id="cb82-78"><a href="#cb82-78" aria-hidden="true" tabindex="-1"></a>  Nat.sInf_le h</span>
+<span id="cb82-79"><a href="#cb82-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-80"><a href="#cb82-80" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The potential `Σ (errIndex + 1)`: a step raises it by at most the domain size. -/</span></span>
+<span id="cb82-81"><a href="#cb82-81" aria-hidden="true" tabindex="-1"></a><span class="kw">noncomputable</span> <span class="kw">def</span> potential (u : ℝ) (ps : List (Computed bn)) : ℕ :=</span>
+<span id="cb82-82"><a href="#cb82-82" aria-hidden="true" tabindex="-1"></a>  (ps.map <span class="kw">fun</span> p =&gt; errIndex u p + <span class="dv">1</span>).sum</span>
+<span id="cb82-83"><a href="#cb82-83" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-84"><a href="#cb82-84" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> potential_eq (ps : List (Computed bn)) :</span>
+<span id="cb82-85"><a href="#cb82-85" aria-hidden="true" tabindex="-1"></a>    potential u ps = (ps.map (errIndex u)).sum + ps.length := <span class="kw">by</span></span>
+<span id="cb82-86"><a href="#cb82-86" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> ps <span class="kw">with</span></span>
+<span id="cb82-87"><a href="#cb82-87" aria-hidden="true" tabindex="-1"></a>  | nil =&gt; <span class="cf">rfl</span></span>
+<span id="cb82-88"><a href="#cb82-88" aria-hidden="true" tabindex="-1"></a>  | cons p ps ih =&gt; <span class="cf">simp</span> only [potential, List.map_cons, List.sum_cons, List.length_cons] <span class="kw">at</span> *; <span class="cf">omega</span></span>
+<span id="cb82-89"><a href="#cb82-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-90"><a href="#cb82-90" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> potential_split (v : bn.V) (ps : List (Computed bn)) :</span>
+<span id="cb82-91"><a href="#cb82-91" aria-hidden="true" tabindex="-1"></a>    potential u ps = potential u (cbucket v ps) + potential u (coutside v ps) := <span class="kw">by</span></span>
+<span id="cb82-92"><a href="#cb82-92" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> ps <span class="kw">with</span></span>
+<span id="cb82-93"><a href="#cb82-93" aria-hidden="true" tabindex="-1"></a>  | nil =&gt; <span class="cf">rfl</span></span>
+<span id="cb82-94"><a href="#cb82-94" aria-hidden="true" tabindex="-1"></a>  | cons p ps ih =&gt;</span>
+<span id="cb82-95"><a href="#cb82-95" aria-hidden="true" tabindex="-1"></a>    <span class="cf">by_cases</span> h : v ∈ p.<span class="fl">1.</span>scope &lt;;&gt;</span>
+<span id="cb82-96"><a href="#cb82-96" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp_all</span> [potential, cbucket, coutside] &lt;;&gt; <span class="cf">omega</span></span>
+<span id="cb82-97"><a href="#cb82-97" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-98"><a href="#cb82-98" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> product_eq_map (fs : List (Factor bn ℝ)) (x : bn.Assignment) :</span>
+<span id="cb82-99"><a href="#cb82-99" aria-hidden="true" tabindex="-1"></a>    product fs x = (fs.map <span class="kw">fun</span> f =&gt; f.value x).prod := <span class="cf">rfl</span></span>
+<span id="cb82-100"><a href="#cb82-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-101"><a href="#cb82-101" aria-hidden="true" tabindex="-1"></a><span class="do">/-- One step: the new computed factor is good, and its index plus one is at most the bucket&#39;s</span></span>
+<span id="cb82-102"><a href="#cb82-102" aria-hidden="true" tabindex="-1"></a><span class="do">potential plus the domain size of `v`. -/</span></span>
+<span id="cb82-103"><a href="#cb82-103" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> sumOutStep_good (hu : <span class="dv">0</span> ≤ u) {v : bn.V} {ps : List (Computed bn)}</span>
+<span id="cb82-104"><a href="#cb82-104" aria-hidden="true" tabindex="-1"></a>    {g : bn.Assignment → ℝ} (hgood : ∀ p ∈ ps, Good u p) (hstep : SumOutStep u v ps g) :</span>
+<span id="cb82-105"><a href="#cb82-105" aria-hidden="true" tabindex="-1"></a>    Good u (sumBucket v (bucket v (ps.map Prod.fst)), g) ∧</span>
+<span id="cb82-106"><a href="#cb82-106" aria-hidden="true" tabindex="-1"></a>      errIndex u (sumBucket v (bucket v (ps.map Prod.fst)), g) + <span class="dv">1</span> ≤</span>
+<span id="cb82-107"><a href="#cb82-107" aria-hidden="true" tabindex="-1"></a>        potential u (cbucket v ps) + Fintype.card (bn.states v) := <span class="kw">by</span></span>
+<span id="cb82-108"><a href="#cb82-108" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hb : ∀ p ∈ cbucket v ps, Good u p := <span class="kw">fun</span> p hp =&gt; hgood p (List.mem_filter.mp hp).<span class="dv">1</span></span>
+<span id="cb82-109"><a href="#cb82-109" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hexact : ∀ z, product (bucket v (ps.map Prod.fst)) z =</span>
+<span id="cb82-110"><a href="#cb82-110" aria-hidden="true" tabindex="-1"></a>      ((cbucket v ps).map <span class="kw">fun</span> p : Computed bn =&gt; p.<span class="fl">1.</span>value z).prod := <span class="kw">by</span></span>
+<span id="cb82-111"><a href="#cb82-111" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> z</span>
+<span id="cb82-112"><a href="#cb82-112" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [product_eq_map, ← cbucket_fst, List.map_map]</span>
+<span id="cb82-113"><a href="#cb82-113" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rfl</span></span>
+<span id="cb82-114"><a href="#cb82-114" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hnn : ∀ z, <span class="dv">0</span> ≤ product (bucket v (ps.map Prod.fst)) z := <span class="kw">fun</span> z =&gt; <span class="kw">by</span></span>
+<span id="cb82-115"><a href="#cb82-115" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hexact]; <span class="cf">exact</span> prod_map_nonneg <span class="kw">fun</span> p hp =&gt; (hb p hp).<span class="dv">1</span> z</span>
+<span id="cb82-116"><a href="#cb82-116" aria-hidden="true" tabindex="-1"></a>  set n := ((cbucket v ps).map (errIndex u)).sum + ((cbucket v ps).length - <span class="dv">1</span>) +</span>
+<span id="cb82-117"><a href="#cb82-117" aria-hidden="true" tabindex="-1"></a>    (Fintype.card (bn.states v) - <span class="dv">1</span>) <span class="kw">with</span> hn</span>
+<span id="cb82-118"><a href="#cb82-118" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hwithin : ∀ x, RelWithin (gamma u n) ((sumBucket v (bucket v (ps.map Prod.fst))).value x)</span>
+<span id="cb82-119"><a href="#cb82-119" aria-hidden="true" tabindex="-1"></a>      (g x) := <span class="kw">by</span></span>
+<span id="cb82-120"><a href="#cb82-120" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> x</span>
+<span id="cb82-121"><a href="#cb82-121" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨c, hsum, hprod⟩ := hstep x</span>
+<span id="cb82-122"><a href="#cb82-122" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hc : ∀ a, RelWithin (gamma u (((cbucket v ps).map (errIndex u)).sum +</span>
+<span id="cb82-123"><a href="#cb82-123" aria-hidden="true" tabindex="-1"></a>        ((cbucket v ps).length - <span class="dv">1</span>))) (product (bucket v (ps.map Prod.fst))</span>
+<span id="cb82-124"><a href="#cb82-124" aria-hidden="true" tabindex="-1"></a>          (Function.update x v a)) (c a) := <span class="kw">by</span></span>
+<span id="cb82-125"><a href="#cb82-125" aria-hidden="true" tabindex="-1"></a>      <span class="cf">intro</span> a</span>
+<span id="cb82-126"><a href="#cb82-126" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hexact]</span>
+<span id="cb82-127"><a href="#cb82-127" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> (hprod a).within hu (y := <span class="kw">fun</span> p : Computed bn =&gt; p.<span class="fl">1.</span>value (Function.update x v a))</span>
+<span id="cb82-128"><a href="#cb82-128" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> p hp =&gt; ⟨(hb p hp).<span class="dv">1</span> _, (hb p hp).within _⟩)</span>
+<span id="cb82-129"><a href="#cb82-129" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := hsum.within hu (y := <span class="kw">fun</span> a =&gt; product (bucket v (ps.map Prod.fst))</span>
+<span id="cb82-130"><a href="#cb82-130" aria-hidden="true" tabindex="-1"></a>      (Function.update x v a)) (<span class="kw">fun</span> a _ =&gt; ⟨hnn _, hc a⟩)</span>
+<span id="cb82-131"><a href="#cb82-131" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [Finset.sum_map_toList, Finset.length_toList, Finset.card_univ] <span class="kw">at</span> this</span>
+<span id="cb82-132"><a href="#cb82-132" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> this</span>
+<span id="cb82-133"><a href="#cb82-133" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hcard : <span class="dv">0</span> &lt; Fintype.card (bn.states v) := Fintype.card_pos</span>
+<span id="cb82-134"><a href="#cb82-134" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨⟨fun x =&gt; Finset.sum_nonneg <span class="kw">fun</span> a _ =&gt; hnn _, n, hwithin⟩, ?_⟩</span>
+<span id="cb82-135"><a href="#cb82-135" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> := errIndex_le (p := (sumBucket v (bucket v (ps.map Prod.fst)), g)) hwithin</span>
+<span id="cb82-136"><a href="#cb82-136" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [potential_eq]</span>
+<span id="cb82-137"><a href="#cb82-137" aria-hidden="true" tabindex="-1"></a>  <span class="cf">omega</span></span>
+<span id="cb82-138"><a href="#cb82-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-139"><a href="#cb82-139" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The invariant of a run: every computed factor stays good, and the potential grows by at most</span></span>
+<span id="cb82-140"><a href="#cb82-140" aria-hidden="true" tabindex="-1"></a><span class="do">the domain size of each eliminated variable. -/</span></span>
+<span id="cb82-141"><a href="#cb82-141" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> Run.good (hu : <span class="dv">0</span> ≤ u) {ps : List (Computed bn)} {vs : List bn.V}</span>
+<span id="cb82-142"><a href="#cb82-142" aria-hidden="true" tabindex="-1"></a>    {out : List (Computed bn)} (h : Run u ps vs out) (hgood : ∀ p ∈ ps, Good u p) :</span>
+<span id="cb82-143"><a href="#cb82-143" aria-hidden="true" tabindex="-1"></a>    (∀ p ∈ out, Good u p) ∧</span>
+<span id="cb82-144"><a href="#cb82-144" aria-hidden="true" tabindex="-1"></a>      potential u out ≤ potential u ps + (vs.map <span class="kw">fun</span> v =&gt; Fintype.card (bn.states v)).sum := <span class="kw">by</span></span>
+<span id="cb82-145"><a href="#cb82-145" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> h <span class="kw">with</span></span>
+<span id="cb82-146"><a href="#cb82-146" aria-hidden="true" tabindex="-1"></a>  | nil ps =&gt; <span class="cf">exact</span> ⟨hgood, <span class="kw">by</span> simp⟩</span>
+<span id="cb82-147"><a href="#cb82-147" aria-hidden="true" tabindex="-1"></a>  | @cons v vs ps out g hstep _ ih =&gt;</span>
+<span id="cb82-148"><a href="#cb82-148" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨hnew, hle⟩ := sumOutStep_good hu hgood hstep</span>
+<span id="cb82-149"><a href="#cb82-149" aria-hidden="true" tabindex="-1"></a>    <span class="cf">obtain</span> ⟨hout, hpot⟩ := ih (<span class="kw">by</span></span>
+<span id="cb82-150"><a href="#cb82-150" aria-hidden="true" tabindex="-1"></a>      <span class="cf">intro</span> p hp</span>
+<span id="cb82-151"><a href="#cb82-151" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rcases</span> List.mem_cons.mp hp <span class="kw">with</span> <span class="cf">rfl</span> | hp</span>
+<span id="cb82-152"><a href="#cb82-152" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> hnew</span>
+<span id="cb82-153"><a href="#cb82-153" aria-hidden="true" tabindex="-1"></a>      · <span class="cf">exact</span> hgood p (List.mem_filter.mp hp).<span class="dv">1</span>)</span>
+<span id="cb82-154"><a href="#cb82-154" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> ⟨hout, ?_⟩</span>
+<span id="cb82-155"><a href="#cb82-155" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hsplit := potential_split (u := u) v ps</span>
+<span id="cb82-156"><a href="#cb82-156" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [potential, List.map_cons, List.sum_cons] <span class="kw">at</span> hpot hle hsplit ⊢</span>
+<span id="cb82-157"><a href="#cb82-157" aria-hidden="true" tabindex="-1"></a>    <span class="cf">omega</span></span>
+<span id="cb82-158"><a href="#cb82-158" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-159"><a href="#cb82-159" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> inputs_good (fs : List (Factor bn ℝ)) (hfs : ∀ f ∈ fs, ∀ x, <span class="dv">0</span> ≤ f.value x) :</span>
+<span id="cb82-160"><a href="#cb82-160" aria-hidden="true" tabindex="-1"></a>    (∀ p ∈ inputs fs, Good u p) ∧ potential u (inputs fs) = fs.length := <span class="kw">by</span></span>
+<span id="cb82-161"><a href="#cb82-161" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h0 : ∀ f ∈ fs, ∀ x, RelWithin (gamma u <span class="dv">0</span>) (f.value x) (f.value x) := <span class="kw">fun</span> f hf x =&gt;</span>
+<span id="cb82-162"><a href="#cb82-162" aria-hidden="true" tabindex="-1"></a>    relWithin_refl _ (<span class="kw">by</span> <span class="cf">rw</span> [gamma_zero]) (hfs f hf x)</span>
+<span id="cb82-163"><a href="#cb82-163" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨fun p hp =&gt; ?_, ?_⟩</span>
+<span id="cb82-164"><a href="#cb82-164" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">obtain</span> ⟨f, hf, rfl⟩ := List.mem_map.mp hp</span>
+<span id="cb82-165"><a href="#cb82-165" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ⟨hfs f hf, <span class="dv">0</span>, h0 f hf⟩</span>
+<span id="cb82-166"><a href="#cb82-166" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> : ∀ f ∈ fs, errIndex u ((f, f.value) : Computed bn) = <span class="dv">0</span> := <span class="kw">fun</span> f hf =&gt;</span>
+<span id="cb82-167"><a href="#cb82-167" aria-hidden="true" tabindex="-1"></a>      Nat.le_zero.mp (errIndex_le (h0 f hf))</span>
+<span id="cb82-168"><a href="#cb82-168" aria-hidden="true" tabindex="-1"></a>    <span class="cf">unfold</span> potential inputs</span>
+<span id="cb82-169"><a href="#cb82-169" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [List.map_map]</span>
+<span id="cb82-170"><a href="#cb82-170" aria-hidden="true" tabindex="-1"></a>    <span class="cf">induction</span> fs <span class="kw">with</span></span>
+<span id="cb82-171"><a href="#cb82-171" aria-hidden="true" tabindex="-1"></a>    | nil =&gt; <span class="cf">rfl</span></span>
+<span id="cb82-172"><a href="#cb82-172" aria-hidden="true" tabindex="-1"></a>    | cons f fs ih =&gt;</span>
+<span id="cb82-173"><a href="#cb82-173" aria-hidden="true" tabindex="-1"></a>      <span class="cf">simp</span> only [List.map_cons, List.sum_cons, List.length_cons, Function.comp_apply]</span>
+<span id="cb82-174"><a href="#cb82-174" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [this f (<span class="kw">by</span> <span class="cf">simp</span>), ih (<span class="kw">fun</span> g hg =&gt; hfs g (<span class="kw">by</span> <span class="cf">simp</span> [hg])) (<span class="kw">fun</span> g hg x =&gt; h0 g (<span class="kw">by</span> <span class="cf">simp</span> [hg]) x)</span>
+<span id="cb82-175"><a href="#cb82-175" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> g hg =&gt; this g (<span class="kw">by</span> <span class="cf">simp</span> [hg]))]</span>
+<span id="cb82-176"><a href="#cb82-176" aria-hidden="true" tabindex="-1"></a>      <span class="cf">ring</span></span>
+<span id="cb82-177"><a href="#cb82-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-178"><a href="#cb82-178" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Forward error of variable elimination.** Let `fs` be nonnegative factors, `vs` an</span></span>
+<span id="cb82-179"><a href="#cb82-179" aria-hidden="true" tabindex="-1"></a><span class="do">elimination order, and `out` the result of any approximate run under the standard model with</span></span>
+<span id="cb82-180"><a href="#cb82-180" aria-hidden="true" tabindex="-1"></a><span class="do">unit roundoff `u ≥ 0`. Then the exact half of `out` is `eliminateAll fs vs`; every entry of every</span></span>
+<span id="cb82-181"><a href="#cb82-181" aria-hidden="true" tabindex="-1"></a><span class="do">computed factor in `out` is within relative `γ N` of the exact entry; and so is any product of the</span></span>
+<span id="cb82-182"><a href="#cb82-182" aria-hidden="true" tabindex="-1"></a><span class="do">remaining computed factors, in any order and association, with</span></span>
+<span id="cb82-183"><a href="#cb82-183" aria-hidden="true" tabindex="-1"></a><span class="do">`N = veIndex fs.length vs = |fs| + Σ_{v ∈ vs} |states v| - 1`. -/</span></span>
+<span id="cb82-184"><a href="#cb82-184" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> eliminateAll_forward_error (hu : <span class="dv">0</span> ≤ u) (fs : List (Factor bn ℝ))</span>
+<span id="cb82-185"><a href="#cb82-185" aria-hidden="true" tabindex="-1"></a>    (hfs : ∀ f ∈ fs, ∀ x, <span class="dv">0</span> ≤ f.value x) (vs : List bn.V) (out : List (Computed bn))</span>
+<span id="cb82-186"><a href="#cb82-186" aria-hidden="true" tabindex="-1"></a>    (hrun : Run u (inputs fs) vs out) :</span>
+<span id="cb82-187"><a href="#cb82-187" aria-hidden="true" tabindex="-1"></a>    out.map Prod.fst = eliminateAll fs vs ∧</span>
+<span id="cb82-188"><a href="#cb82-188" aria-hidden="true" tabindex="-1"></a>      (∀ p ∈ out, ∀ x, RelWithin (gamma u (veIndex fs.length vs)) (p.<span class="fl">1.</span>value x) (p<span class="fl">.2</span> x)) ∧</span>
+<span id="cb82-189"><a href="#cb82-189" aria-hidden="true" tabindex="-1"></a>      ∀ x c, CompProd u (<span class="kw">fun</span> p : Computed bn =&gt; p<span class="fl">.2</span> x) out c →</span>
+<span id="cb82-190"><a href="#cb82-190" aria-hidden="true" tabindex="-1"></a>        RelWithin (gamma u (veIndex fs.length vs)) (product (eliminateAll fs vs) x) c := <span class="kw">by</span></span>
+<span id="cb82-191"><a href="#cb82-191" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hfst : out.map Prod.fst = eliminateAll fs vs := <span class="kw">by</span></span>
+<span id="cb82-192"><a href="#cb82-192" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hrun.fst]; <span class="cf">simp</span> [inputs, Function.comp_def]</span>
+<span id="cb82-193"><a href="#cb82-193" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hgood0, hpot0⟩ := inputs_good (u := u) fs hfs</span>
+<span id="cb82-194"><a href="#cb82-194" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hgood, hpot⟩ := hrun.good hu hgood0</span>
+<span id="cb82-195"><a href="#cb82-195" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hpot0] <span class="kw">at</span> hpot</span>
+<span id="cb82-196"><a href="#cb82-196" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hpe := potential_eq (u := u) out</span>
+<span id="cb82-197"><a href="#cb82-197" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨hfst, <span class="kw">fun</span> p hp x =&gt; ?_, <span class="kw">fun</span> x c hc =&gt; ?_⟩</span>
+<span id="cb82-198"><a href="#cb82-198" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> hle : errIndex u p + <span class="dv">1</span> ≤ potential u out :=</span>
+<span id="cb82-199"><a href="#cb82-199" aria-hidden="true" tabindex="-1"></a>      List.le_sum_of_mem (List.mem_map.mpr ⟨p, hp, rfl⟩)</span>
+<span id="cb82-200"><a href="#cb82-200" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hidx : errIndex u p ≤ veIndex fs.length vs := <span class="kw">by</span> <span class="cf">unfold</span> veIndex; <span class="cf">omega</span></span>
+<span id="cb82-201"><a href="#cb82-201" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> ((hgood p hp).within x).mono (gamma_mono hu hidx) ((hgood p hp).<span class="dv">1</span> x)</span>
+<span id="cb82-202"><a href="#cb82-202" aria-hidden="true" tabindex="-1"></a>  · <span class="kw">have</span> := hc.within hu (y := <span class="kw">fun</span> p : Computed bn =&gt; p.<span class="fl">1.</span>value x) (e := errIndex u)</span>
+<span id="cb82-203"><a href="#cb82-203" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">fun</span> p hp =&gt; ⟨(hgood p hp).<span class="dv">1</span> x, (hgood p hp).within x⟩)</span>
+<span id="cb82-204"><a href="#cb82-204" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← hfst, product_eq_map, List.map_map]</span>
+<span id="cb82-205"><a href="#cb82-205" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hidx : (out.map (errIndex u)).sum + (out.length - <span class="dv">1</span>) ≤ veIndex fs.length vs := <span class="kw">by</span></span>
+<span id="cb82-206"><a href="#cb82-206" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> h0 : out.length = <span class="dv">0</span> → (out.map (errIndex u)).sum = <span class="dv">0</span> := <span class="kw">fun</span> h =&gt; <span class="kw">by</span></span>
+<span id="cb82-207"><a href="#cb82-207" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [List.length_eq_zero_iff.mp h]; <span class="cf">rfl</span></span>
+<span id="cb82-208"><a href="#cb82-208" aria-hidden="true" tabindex="-1"></a>      <span class="cf">unfold</span> veIndex; <span class="cf">omega</span></span>
+<span id="cb82-209"><a href="#cb82-209" aria-hidden="true" tabindex="-1"></a>    <span class="cf">refine</span> this.mono (gamma_mono hu hidx) ?_</span>
+<span id="cb82-210"><a href="#cb82-210" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> prod_map_nonneg <span class="kw">fun</span> p hp =&gt; (hgood p hp).<span class="dv">1</span> x</span>
+<span id="cb82-211"><a href="#cb82-211" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-212"><a href="#cb82-212" aria-hidden="true" tabindex="-1"></a><span class="do">/-- With a duplicate-free order, the computed result approximates the exact marginal</span></span>
+<span id="cb82-213"><a href="#cb82-213" aria-hidden="true" tabindex="-1"></a><span class="do">`marg vs.toFinset (product fs)` (`eliminateAll_correct`). -/</span></span>
+<span id="cb82-214"><a href="#cb82-214" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> eliminateAll_marg_forward_error (hu : <span class="dv">0</span> ≤ u) (fs : List (Factor bn ℝ))</span>
+<span id="cb82-215"><a href="#cb82-215" aria-hidden="true" tabindex="-1"></a>    (hfs : ∀ f ∈ fs, ∀ x, <span class="dv">0</span> ≤ f.value x) (vs : List bn.V) (hvs : vs.Nodup)</span>
+<span id="cb82-216"><a href="#cb82-216" aria-hidden="true" tabindex="-1"></a>    (out : List (Computed bn)) (hrun : Run u (inputs fs) vs out) (x : bn.Assignment) (c : ℝ)</span>
+<span id="cb82-217"><a href="#cb82-217" aria-hidden="true" tabindex="-1"></a>    (hc : CompProd u (<span class="kw">fun</span> p : Computed bn =&gt; p<span class="fl">.2</span> x) out c) :</span>
+<span id="cb82-218"><a href="#cb82-218" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (veIndex fs.length vs)) (marg vs.toFinset (product fs) x) c := <span class="kw">by</span></span>
+<span id="cb82-219"><a href="#cb82-219" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [← eliminateAll_correct fs vs hvs x]</span>
+<span id="cb82-220"><a href="#cb82-220" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> (eliminateAll_forward_error hu fs hfs vs out hrun).<span class="fl">2.2</span> x c hc</span>
+<span id="cb82-221"><a href="#cb82-221" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-222"><a href="#cb82-222" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Evidence by slicing, the shape of the Julia engine: eliminating over factors conditioned on</span></span>
+<span id="cb82-223"><a href="#cb82-223" aria-hidden="true" tabindex="-1"></a><span class="do">the evidence (`condition`, `explicit_conditioning_elimination`) gives the same bound, with the</span></span>
+<span id="cb82-224"><a href="#cb82-224" aria-hidden="true" tabindex="-1"></a><span class="do">evidence variables neither factors nor eliminated. -/</span></span>
+<span id="cb82-225"><a href="#cb82-225" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> conditioned_forward_error (hu : <span class="dv">0</span> ≤ u) (fs : List (Factor bn ℝ))</span>
+<span id="cb82-226"><a href="#cb82-226" aria-hidden="true" tabindex="-1"></a>    (hfs : ∀ f ∈ fs, ∀ x, <span class="dv">0</span> ≤ f.value x) (E : Finset bn.V) (observed : bn.Assignment)</span>
+<span id="cb82-227"><a href="#cb82-227" aria-hidden="true" tabindex="-1"></a>    (vs : List bn.V) (hvs : vs.Nodup) (hd : Disjoint E vs.toFinset) (out : List (Computed bn))</span>
+<span id="cb82-228"><a href="#cb82-228" aria-hidden="true" tabindex="-1"></a>    (hrun : Run u (inputs (fs.map (condition E observed))) vs out) (x : bn.Assignment) (c : ℝ)</span>
+<span id="cb82-229"><a href="#cb82-229" aria-hidden="true" tabindex="-1"></a>    (hc : CompProd u (<span class="kw">fun</span> p : Computed bn =&gt; p<span class="fl">.2</span> x) out c) :</span>
+<span id="cb82-230"><a href="#cb82-230" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (veIndex fs.length vs))</span>
+<span id="cb82-231"><a href="#cb82-231" aria-hidden="true" tabindex="-1"></a>      (marg (vs.toFinset ∪ E) (<span class="kw">fun</span> y =&gt; product fs y * indicator E observed y) x) c := <span class="kw">by</span></span>
+<span id="cb82-232"><a href="#cb82-232" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [← explicit_conditioning_elimination fs E observed vs hvs hd x]</span>
+<span id="cb82-233"><a href="#cb82-233" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h := (eliminateAll_forward_error hu (fs.map (condition E observed))</span>
+<span id="cb82-234"><a href="#cb82-234" aria-hidden="true" tabindex="-1"></a>    (<span class="kw">fun</span> f hf y =&gt; <span class="kw">by</span></span>
+<span id="cb82-235"><a href="#cb82-235" aria-hidden="true" tabindex="-1"></a>      <span class="cf">obtain</span> ⟨g, hg, rfl⟩ := List.mem_map.mp hf</span>
+<span id="cb82-236"><a href="#cb82-236" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> hfs g hg _) vs out hrun).<span class="fl">2.2</span> x c hc</span>
+<span id="cb82-237"><a href="#cb82-237" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rwa</span> [List.length_map] <span class="kw">at</span> h</span>
+<span id="cb82-238"><a href="#cb82-238" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-239"><a href="#cb82-239" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> length_inputs_posterior (κ : bn.Kernel ℝ) (hloc : ∀ m, Local κ m) (E : Finset bn.V)</span>
+<span id="cb82-240"><a href="#cb82-240" aria-hidden="true" tabindex="-1"></a>    (observed : bn.Assignment) :</span>
+<span id="cb82-241"><a href="#cb82-241" aria-hidden="true" tabindex="-1"></a>    (evidenceFactor E observed :: ofKernel κ hloc).length = Fintype.card bn.M + <span class="dv">1</span> := <span class="kw">by</span></span>
+<span id="cb82-242"><a href="#cb82-242" aria-hidden="true" tabindex="-1"></a>  <span class="cf">simp</span> [ofKernel, Finset.length_toList]</span>
+<span id="cb82-243"><a href="#cb82-243" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-244"><a href="#cb82-244" aria-hidden="true" tabindex="-1"></a><span class="do">/-- The explicit index of the posterior bound: `N = veIndex (|M| + 1) vs` for the CPT factors</span></span>
+<span id="cb82-245"><a href="#cb82-245" aria-hidden="true" tabindex="-1"></a><span class="do">and the evidence indicator, plus the number of query assignments. -/</span></span>
+<span id="cb82-246"><a href="#cb82-246" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> posteriorIndex (bn : FinBayesNet) (Q : Finset bn.V) (vs : List bn.V) : ℕ :=</span>
+<span id="cb82-247"><a href="#cb82-247" aria-hidden="true" tabindex="-1"></a>  veIndex (Fintype.card bn.M + <span class="dv">1</span>) vs + Fintype.card (PartialAssignment bn Q)</span>
+<span id="cb82-248"><a href="#cb82-248" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb82-249"><a href="#cb82-249" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Forward error of the posterior.** Run variable elimination under the standard model on</span></span>
+<span id="cb82-250"><a href="#cb82-250" aria-hidden="true" tabindex="-1"></a><span class="do">the compiled CPT factors and the evidence indicator, eliminating `vs = Qᶜ`; compute each</span></span>
+<span id="cb82-251"><a href="#cb82-251" aria-hidden="true" tabindex="-1"></a><span class="do">query entry `num q` as a product of the remaining tables at a query assignment, the mass `Z`</span></span>
+<span id="cb82-252"><a href="#cb82-252" aria-hidden="true" tabindex="-1"></a><span class="do">as a sum of the `num q` in any order and association, and each posterior entry as the rounded</span></span>
+<span id="cb82-253"><a href="#cb82-253" aria-hidden="true" tabindex="-1"></a><span class="do">quotient `num q / Z`. Whenever the exact posterior exists (positive evidence mass) and</span></span>
+<span id="cb82-254"><a href="#cb82-254" aria-hidden="true" tabindex="-1"></a><span class="do">`γ K &lt; 1` with `K = posteriorIndex bn Q vs`, the computed mass is within relative `γ (K - 1)`</span></span>
+<span id="cb82-255"><a href="#cb82-255" aria-hidden="true" tabindex="-1"></a><span class="do">of the evidence mass, and every computed posterior entry is within relative</span></span>
+<span id="cb82-256"><a href="#cb82-256" aria-hidden="true" tabindex="-1"></a><span class="do">`(1 + γ K) / (1 - γ K) - 1` of the exact posterior entry. -/</span></span>
+<span id="cb82-257"><a href="#cb82-257" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> ve_posterior_forward_error (hu : <span class="dv">0</span> ≤ u) (κ : bn.Kernel ℝ) (hloc : ∀ m, Local κ m)</span>
+<span id="cb82-258"><a href="#cb82-258" aria-hidden="true" tabindex="-1"></a>    (hκ : ∀ m x a, <span class="dv">0</span> ≤ κ m x a) (Q E : Finset bn.V) (observed : bn.Assignment)</span>
+<span id="cb82-259"><a href="#cb82-259" aria-hidden="true" tabindex="-1"></a>    (vs : List bn.V) (hvs : vs.Nodup) (hset : vs.toFinset = Qᶜ) (out : List (Computed bn))</span>
+<span id="cb82-260"><a href="#cb82-260" aria-hidden="true" tabindex="-1"></a>    (hrun : Run u (inputs (evidenceFactor E observed :: ofKernel κ hloc)) vs out)</span>
+<span id="cb82-261"><a href="#cb82-261" aria-hidden="true" tabindex="-1"></a>    (base : bn.Assignment) (num : PartialAssignment bn Q → ℝ)</span>
+<span id="cb82-262"><a href="#cb82-262" aria-hidden="true" tabindex="-1"></a>    (hnum : ∀ q, CompProd u (<span class="kw">fun</span> p : Computed bn =&gt; p<span class="fl">.2</span> (patch Q base q)) out (num q))</span>
+<span id="cb82-263"><a href="#cb82-263" aria-hidden="true" tabindex="-1"></a>    (Z : ℝ) (hZ : CompSum u num Finset.univ.toList Z)</span>
+<span id="cb82-264"><a href="#cb82-264" aria-hidden="true" tabindex="-1"></a>    (post : PartialAssignment bn Q → ℝ) (hpost : ∀ q, Rounded u (num q / Z) (post q))</span>
+<span id="cb82-265"><a href="#cb82-265" aria-hidden="true" tabindex="-1"></a>    (d : Distribution (PartialAssignment bn Q))</span>
+<span id="cb82-266"><a href="#cb82-266" aria-hidden="true" tabindex="-1"></a>    (hd : posterior Q E observed (joint κ) (joint_nonneg κ hκ) = some d)</span>
+<span id="cb82-267"><a href="#cb82-267" aria-hidden="true" tabindex="-1"></a>    (hsmall : gamma u (posteriorIndex bn Q vs) &lt; <span class="dv">1</span>) :</span>
+<span id="cb82-268"><a href="#cb82-268" aria-hidden="true" tabindex="-1"></a>    RelWithin (gamma u (posteriorIndex bn Q vs - <span class="dv">1</span>)) (mass (likelihoodWeight (joint κ) E observed))</span>
+<span id="cb82-269"><a href="#cb82-269" aria-hidden="true" tabindex="-1"></a>        Z ∧</span>
+<span id="cb82-270"><a href="#cb82-270" aria-hidden="true" tabindex="-1"></a>      ∀ q, RelWithin ((<span class="dv">1</span> + gamma u (posteriorIndex bn Q vs)) /</span>
+<span id="cb82-271"><a href="#cb82-271" aria-hidden="true" tabindex="-1"></a>        (<span class="dv">1</span> - gamma u (posteriorIndex bn Q vs)) - <span class="dv">1</span>) (d.pmf q) (post q) := <span class="kw">by</span></span>
+<span id="cb82-272"><a href="#cb82-272" aria-hidden="true" tabindex="-1"></a>  set fs := evidenceFactor E observed :: ofKernel κ hloc <span class="kw">with</span> hfsdef</span>
+<span id="cb82-273"><a href="#cb82-273" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hfs : ∀ f ∈ fs, ∀ x, <span class="dv">0</span> ≤ f.value x := <span class="kw">by</span></span>
+<span id="cb82-274"><a href="#cb82-274" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> f hf x</span>
+<span id="cb82-275"><a href="#cb82-275" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> List.mem_cons.mp hf <span class="kw">with</span> <span class="cf">rfl</span> | hf</span>
+<span id="cb82-276"><a href="#cb82-276" aria-hidden="true" tabindex="-1"></a>    · change <span class="dv">0</span> ≤ indicator E observed x</span>
+<span id="cb82-277"><a href="#cb82-277" aria-hidden="true" tabindex="-1"></a>      <span class="cf">unfold</span> indicator; <span class="cf">split_ifs</span> &lt;;&gt; <span class="cf">norm_num</span></span>
+<span id="cb82-278"><a href="#cb82-278" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">obtain</span> ⟨m, -, rfl⟩ := List.mem_map.mp hf</span>
+<span id="cb82-279"><a href="#cb82-279" aria-hidden="true" tabindex="-1"></a>      <span class="cf">exact</span> hκ m x _</span>
+<span id="cb82-280"><a href="#cb82-280" aria-hidden="true" tabindex="-1"></a>  set w := pushWeight (restrictTo Q) (likelihoodWeight (joint κ) E observed) <span class="kw">with</span> hw</span>
+<span id="cb82-281"><a href="#cb82-281" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hwn : ∀ q, <span class="dv">0</span> ≤ w q :=</span>
+<span id="cb82-282"><a href="#cb82-282" aria-hidden="true" tabindex="-1"></a>    pushWeight_nonneg _ _ (likelihoodWeight_nonneg _ (joint_nonneg κ hκ) E observed)</span>
+<span id="cb82-283"><a href="#cb82-283" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hwc : ∀ q, RelWithin (gamma u (veIndex (Fintype.card bn.M + <span class="dv">1</span>) vs)) (w q) (num q) := <span class="kw">by</span></span>
+<span id="cb82-284"><a href="#cb82-284" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> q</span>
+<span id="cb82-285"><a href="#cb82-285" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h := (eliminateAll_forward_error hu fs hfs vs out hrun).<span class="fl">2.2</span> _ _ (hnum q)</span>
+<span id="cb82-286"><a href="#cb82-286" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [ve_posterior_numerator κ hloc Q E observed vs hvs hset, restrict_patch] <span class="kw">at</span> h</span>
+<span id="cb82-287"><a href="#cb82-287" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rwa</span> [hfsdef, length_inputs_posterior] <span class="kw">at</span> h</span>
+<span id="cb82-288"><a href="#cb82-288" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hmass : <span class="dv">0</span> &lt; mass w := <span class="kw">by</span></span>
+<span id="cb82-289"><a href="#cb82-289" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hne : posterior Q E observed (joint κ) (joint_nonneg κ hκ) ≠ none := <span class="kw">by</span> <span class="cf">rw</span> [hd]; <span class="cf">simp</span></span>
+<span id="cb82-290"><a href="#cb82-290" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [posterior, Ne, normalize_none_iff] <span class="kw">at</span> hne</span>
+<span id="cb82-291"><a href="#cb82-291" aria-hidden="true" tabindex="-1"></a>    <span class="cf">exact</span> lt_of_le_of_ne (mass_nonneg _ hwn) (Ne.symm hne)</span>
+<span id="cb82-292"><a href="#cb82-292" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hZm, hpq⟩ := normalize_forward_error hu w num hwn _ hwc Z hZ post hpost hmass hsmall</span>
+<span id="cb82-293"><a href="#cb82-293" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hmw : mass w = mass (likelihoodWeight (joint κ) E observed) := mass_pushWeight _ _</span>
+<span id="cb82-294"><a href="#cb82-294" aria-hidden="true" tabindex="-1"></a>  <span class="cf">refine</span> ⟨by <span class="cf">rw</span> [← hmw]; <span class="cf">exact</span> hZm, <span class="kw">fun</span> q =&gt; ?_⟩</span>
+<span id="cb82-295"><a href="#cb82-295" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hdq : d.pmf q = w q / mass w := <span class="kw">by</span></span>
+<span id="cb82-296"><a href="#cb82-296" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := normalize_value _ _ d hd q</span>
+<span id="cb82-297"><a href="#cb82-297" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [this]</span>
+<span id="cb82-298"><a href="#cb82-298" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rw</span> [hdq]</span>
+<span id="cb82-299"><a href="#cb82-299" aria-hidden="true" tabindex="-1"></a>  <span class="cf">exact</span> hpq q</span></code></pre></div>
+<h2 id="log-sum-exp">Log-sum-exp</h2>
+<div class="sourceCode" id="cb83"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb83-1"><a href="#cb83-1" aria-hidden="true" tabindex="-1"></a><span class="kw">section</span> LogSumExp</span>
+<span id="cb83-2"><a href="#cb83-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb83-3"><a href="#cb83-3" aria-hidden="true" tabindex="-1"></a><span class="kw">open</span> Real</span>
+<span id="cb83-4"><a href="#cb83-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb83-5"><a href="#cb83-5" aria-hidden="true" tabindex="-1"></a><span class="do">/-- Sums with an arbitrary leaf bound `e`: along `t`, the bound becomes</span></span>
+<span id="cb83-6"><a href="#cb83-6" aria-hidden="true" tabindex="-1"></a><span class="do">`(1 + u) ^ height t * (1 + e) - 1`. -/</span></span>
+<span id="cb83-7"><a href="#cb83-7" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> SumRun.within_rel (hu : <span class="dv">0</span> ≤ u) {ι : <span class="kw">Type</span>} {x y : ι → ℝ} {e : ℝ} (he : <span class="dv">0</span> ≤ e)</span>
+<span id="cb83-8"><a href="#cb83-8" aria-hidden="true" tabindex="-1"></a>    {t : Assoc ι} {c : ℝ} (h : SumRun u x t c)</span>
+<span id="cb83-9"><a href="#cb83-9" aria-hidden="true" tabindex="-1"></a>    (hy : ∀ i ∈ t.leaves, <span class="dv">0</span> ≤ y i ∧ RelWithin e (y i) (x i)) :</span>
+<span id="cb83-10"><a href="#cb83-10" aria-hidden="true" tabindex="-1"></a>    RelWithin ((<span class="dv">1</span> + u) ^ t.height * (<span class="dv">1</span> + e) - <span class="dv">1</span>) (t.leaves.map y).sum c := <span class="kw">by</span></span>
+<span id="cb83-11"><a href="#cb83-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h1u : (<span class="dv">1</span> : ℝ) ≤ <span class="dv">1</span> + u := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb83-12"><a href="#cb83-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">induction</span> h <span class="kw">with</span></span>
+<span id="cb83-13"><a href="#cb83-13" aria-hidden="true" tabindex="-1"></a>  | leaf i =&gt;</span>
+<span id="cb83-14"><a href="#cb83-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [Assoc.leaves, Assoc.height] <span class="kw">using</span> (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves])).<span class="dv">2</span></span>
+<span id="cb83-15"><a href="#cb83-15" aria-hidden="true" tabindex="-1"></a>  | @node l r cl cr c _ _ hc ihl ihr =&gt;</span>
+<span id="cb83-16"><a href="#cb83-16" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hl := ihl (<span class="kw">fun</span> i hi =&gt; hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi]))</span>
+<span id="cb83-17"><a href="#cb83-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hr := ihr (<span class="kw">fun</span> i hi =&gt; hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi]))</span>
+<span id="cb83-18"><a href="#cb83-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> nl : <span class="dv">0</span> ≤ (l.leaves.map y).sum :=</span>
+<span id="cb83-19"><a href="#cb83-19" aria-hidden="true" tabindex="-1"></a>      sum_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi])).<span class="dv">1</span></span>
+<span id="cb83-20"><a href="#cb83-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> nr : <span class="dv">0</span> ≤ (r.leaves.map y).sum :=</span>
+<span id="cb83-21"><a href="#cb83-21" aria-hidden="true" tabindex="-1"></a>      sum_map_nonneg <span class="kw">fun</span> i hi =&gt; (hy i (<span class="kw">by</span> <span class="cf">simp</span> [Assoc.leaves, hi])).<span class="dv">1</span></span>
+<span id="cb83-22"><a href="#cb83-22" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> mono : ∀ k, k ≤ max l.height r.height →</span>
+<span id="cb83-23"><a href="#cb83-23" aria-hidden="true" tabindex="-1"></a>        (<span class="dv">1</span> + u) ^ k * (<span class="dv">1</span> + e) - <span class="dv">1</span> ≤ (<span class="dv">1</span> + u) ^ (max l.height r.height) * (<span class="dv">1</span> + e) - <span class="dv">1</span> :=</span>
+<span id="cb83-24"><a href="#cb83-24" aria-hidden="true" tabindex="-1"></a>      <span class="kw">fun</span> k hk =&gt; <span class="kw">by</span> gcongr</span>
+<span id="cb83-25"><a href="#cb83-25" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hsum := (hl.mono (mono _ (le_max_left _ _)) nl).add (hr.mono (mono _ (le_max_right _ _)) nr)</span>
+<span id="cb83-26"><a href="#cb83-26" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := hsum.round (add_nonneg nl nr) hu hc</span>
+<span id="cb83-27"><a href="#cb83-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simp</span> only [Assoc.leaves, Assoc.height, List.map_append, List.sum_append]</span>
+<span id="cb83-28"><a href="#cb83-28" aria-hidden="true" tabindex="-1"></a>    convert this <span class="kw">using</span> <span class="dv">2</span></span>
+<span id="cb83-29"><a href="#cb83-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [pow_succ]; <span class="cf">ring</span></span>
+<span id="cb83-30"><a href="#cb83-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb83-31"><a href="#cb83-31" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> abs_exp_sub_one_le (t : ℝ) : |exp t - <span class="dv">1</span>| ≤ exp |t| - <span class="dv">1</span> := <span class="kw">by</span></span>
+<span id="cb83-32"><a href="#cb83-32" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h1 := add_one_le_exp t</span>
+<span id="cb83-33"><a href="#cb83-33" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> h2 := add_one_le_exp (-t)</span>
+<span id="cb83-34"><a href="#cb83-34" aria-hidden="true" tabindex="-1"></a>  <span class="cf">rcases</span> le_total <span class="dv">0</span> t <span class="kw">with</span> ht | ht</span>
+<span id="cb83-35"><a href="#cb83-35" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [abs_of_nonneg ht, abs_of_nonneg (<span class="kw">by</span> <span class="cf">linarith</span>)]</span>
+<span id="cb83-36"><a href="#cb83-36" aria-hidden="true" tabindex="-1"></a>  · <span class="cf">rw</span> [abs_of_nonpos ht, abs_of_nonpos (<span class="kw">by</span> <span class="cf">linarith</span> [exp_le_one_iff.mpr ht])]</span>
+<span id="cb83-37"><a href="#cb83-37" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : exp t * exp (-t) = <span class="dv">1</span> := <span class="kw">by</span> <span class="cf">rw</span> [← exp_add]; <span class="cf">simp</span></span>
+<span id="cb83-38"><a href="#cb83-38" aria-hidden="true" tabindex="-1"></a>    nlinarith [exp_pos t, exp_pos (-t)]</span>
+<span id="cb83-39"><a href="#cb83-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb83-40"><a href="#cb83-40" aria-hidden="true" tabindex="-1"></a><span class="do">/-- **Log-sum-exp.** The `_LogDomain` sum-out computes `m + log Σ exp (x i - m)` with `m` the</span></span>
+<span id="cb83-41"><a href="#cb83-41" aria-hidden="true" tabindex="-1"></a><span class="do">largest `x i`. Model each `x i - m`, each `exp`, each addition of the sum (in any order and</span></span>
+<span id="cb83-42"><a href="#cb83-42" aria-hidden="true" tabindex="-1"></a><span class="do">association), the `log` and the final `m + _` as one rounding with relative error `u`, and let</span></span>
+<span id="cb83-43"><a href="#cb83-43" aria-hidden="true" tabindex="-1"></a><span class="do">every `x i` lie within `D` of `m`. With `n` terms, `ρ = (1 + u) ^ n * exp (u D) - 1 &lt; 1` and</span></span>
+<span id="cb83-44"><a href="#cb83-44" aria-hidden="true" tabindex="-1"></a><span class="do">`λ = -log (1 - ρ)`, the computed value is within</span></span>
+<span id="cb83-45"><a href="#cb83-45" aria-hidden="true" tabindex="-1"></a><span class="do">`u |exact| + (1 + u) (u (log n + λ) + λ)` of the exact one: an absolute bound on the log scale,</span></span>
+<span id="cb83-46"><a href="#cb83-46" aria-hidden="true" tabindex="-1"></a><span class="do">which is a relative bound of about `exp` of it on the probability scale. -/</span></span>
+<span id="cb83-47"><a href="#cb83-47" aria-hidden="true" tabindex="-1"></a><span class="kw">theorem</span> logSumExp_forward_error (hu : <span class="dv">0</span> ≤ u) {ι : <span class="kw">Type</span>} (l : List ι) (x : ι → ℝ) (m D : ℝ)</span>
+<span id="cb83-48"><a href="#cb83-48" aria-hidden="true" tabindex="-1"></a>    (hm : ∀ i ∈ l, x i ≤ m) (hpeak : ∃ i ∈ l, x i = m) (hD : ∀ i ∈ l, m - x i ≤ D)</span>
+<span id="cb83-49"><a href="#cb83-49" aria-hidden="true" tabindex="-1"></a>    (d e : ι → ℝ) (hd : ∀ i ∈ l, Rounded u (x i - m) (d i))</span>
+<span id="cb83-50"><a href="#cb83-50" aria-hidden="true" tabindex="-1"></a>    (he : ∀ i ∈ l, Rounded u (exp (d i)) (e i)) (S : ℝ) (hS : CompSum u e l S)</span>
+<span id="cb83-51"><a href="#cb83-51" aria-hidden="true" tabindex="-1"></a>    (L : ℝ) (hL : Rounded u (log S) L) (r : ℝ) (hr : Rounded u (m + L) r)</span>
+<span id="cb83-52"><a href="#cb83-52" aria-hidden="true" tabindex="-1"></a>    (hρ : (<span class="dv">1</span> + u) ^ l.length * exp (u * D) - <span class="dv">1</span> &lt; <span class="dv">1</span>) :</span>
+<span id="cb83-53"><a href="#cb83-53" aria-hidden="true" tabindex="-1"></a>    |r - (m + log (l.map <span class="kw">fun</span> i =&gt; exp (x i - m)).sum)| ≤</span>
+<span id="cb83-54"><a href="#cb83-54" aria-hidden="true" tabindex="-1"></a>      u * |m + log (l.map <span class="kw">fun</span> i =&gt; exp (x i - m)).sum| +</span>
+<span id="cb83-55"><a href="#cb83-55" aria-hidden="true" tabindex="-1"></a>        (<span class="dv">1</span> + u) * (u * (log l.length + -log (<span class="dv">1</span> - ((<span class="dv">1</span> + u) ^ l.length * exp (u * D) - <span class="dv">1</span>))) +</span>
+<span id="cb83-56"><a href="#cb83-56" aria-hidden="true" tabindex="-1"></a>          -log (<span class="dv">1</span> - ((<span class="dv">1</span> + u) ^ l.length * exp (u * D) - <span class="dv">1</span>))) := <span class="kw">by</span></span>
+<span id="cb83-57"><a href="#cb83-57" aria-hidden="true" tabindex="-1"></a>  set n := l.length <span class="kw">with</span> hn</span>
+<span id="cb83-58"><a href="#cb83-58" aria-hidden="true" tabindex="-1"></a>  set ρ := (<span class="dv">1</span> + u) ^ n * exp (u * D) - <span class="dv">1</span> <span class="kw">with</span> hρdef</span>
+<span id="cb83-59"><a href="#cb83-59" aria-hidden="true" tabindex="-1"></a>  set lam := -log (<span class="dv">1</span> - ρ) <span class="kw">with</span> hlam</span>
+<span id="cb83-60"><a href="#cb83-60" aria-hidden="true" tabindex="-1"></a>  set T := (l.map <span class="kw">fun</span> i =&gt; exp (x i - m)).sum <span class="kw">with</span> hT</span>
+<span id="cb83-61"><a href="#cb83-61" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨i0, hi0, hxi0⟩ := hpeak</span>
+<span id="cb83-62"><a href="#cb83-62" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hD0 : <span class="dv">0</span> ≤ D := <span class="kw">by</span> <span class="kw">have</span> := hD i0 hi0; <span class="cf">rw</span> [hxi0] <span class="kw">at</span> this; <span class="cf">linarith</span></span>
+<span id="cb83-63"><a href="#cb83-63" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hne : l ≠ [] := List.ne_nil_of_mem hi0</span>
+<span id="cb83-64"><a href="#cb83-64" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hn1 : <span class="dv">1</span> ≤ n := List.length_pos_iff.mpr hne</span>
+<span id="cb83-65"><a href="#cb83-65" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- the exact sum lies in `[1, n]`</span></span>
+<span id="cb83-66"><a href="#cb83-66" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hT1 : <span class="dv">1</span> ≤ T := <span class="kw">by</span></span>
+<span id="cb83-67"><a href="#cb83-67" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := List.single_le_sum (l := l.map <span class="kw">fun</span> i =&gt; exp (x i - m))</span>
+<span id="cb83-68"><a href="#cb83-68" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">fun</span> z hz =&gt; <span class="kw">by</span> <span class="cf">obtain</span> ⟨i, -, rfl⟩ := List.mem_map.mp hz; <span class="cf">exact</span> (exp_pos _).le)</span>
+<span id="cb83-69"><a href="#cb83-69" aria-hidden="true" tabindex="-1"></a>      (exp (x i0 - m)) (List.mem_map.mpr ⟨i0, hi0, rfl⟩)</span>
+<span id="cb83-70"><a href="#cb83-70" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hxi0, sub_self, exp_zero] <span class="kw">at</span> this; <span class="cf">exact</span> this</span>
+<span id="cb83-71"><a href="#cb83-71" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hTn : T ≤ n := <span class="kw">by</span></span>
+<span id="cb83-72"><a href="#cb83-72" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := List.sum_le_card_nsmul (l.map <span class="kw">fun</span> i =&gt; exp (x i - m)) <span class="dv">1</span></span>
+<span id="cb83-73"><a href="#cb83-73" aria-hidden="true" tabindex="-1"></a>      (<span class="kw">fun</span> z hz =&gt; <span class="kw">by</span></span>
+<span id="cb83-74"><a href="#cb83-74" aria-hidden="true" tabindex="-1"></a>        <span class="cf">obtain</span> ⟨i, hi, rfl⟩ := List.mem_map.mp hz</span>
+<span id="cb83-75"><a href="#cb83-75" aria-hidden="true" tabindex="-1"></a>        <span class="cf">exact</span> exp_le_one_iff.mpr (<span class="kw">by</span> <span class="cf">linarith</span> [hm i hi]))</span>
+<span id="cb83-76"><a href="#cb83-76" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [hn] <span class="kw">using</span> this</span>
+<span id="cb83-77"><a href="#cb83-77" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- each computed term</span></span>
+<span id="cb83-78"><a href="#cb83-78" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hterm : ∀ i ∈ l, RelWithin ((<span class="dv">1</span> + u) * exp (u * D) - <span class="dv">1</span>) (exp (x i - m)) (e i) := <span class="kw">by</span></span>
+<span id="cb83-79"><a href="#cb83-79" aria-hidden="true" tabindex="-1"></a>    <span class="cf">intro</span> i hi</span>
+<span id="cb83-80"><a href="#cb83-80" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hdi := (rounded_iff hu _ _).mp (hd i hi)</span>
+<span id="cb83-81"><a href="#cb83-81" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hlocal : RelWithin (exp (u * D) - <span class="dv">1</span>) (exp (x i - m)) (exp (d i)) := <span class="kw">by</span></span>
+<span id="cb83-82"><a href="#cb83-82" aria-hidden="true" tabindex="-1"></a>      <span class="cf">unfold</span> RelWithin</span>
+<span id="cb83-83"><a href="#cb83-83" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [<span class="kw">show</span> exp (d i) - exp (x i - m) = exp (x i - m) * (exp (d i - (x i - m)) - <span class="dv">1</span>) <span class="kw">by</span></span>
+<span id="cb83-84"><a href="#cb83-84" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [mul_sub, ← exp_add]; ring_nf, abs_mul, abs_of_pos (exp_pos _), mul_comm]</span>
+<span id="cb83-85"><a href="#cb83-85" aria-hidden="true" tabindex="-1"></a>      <span class="cf">apply</span> mul_le_mul_of_nonneg_right _ (exp_pos _).le</span>
+<span id="cb83-86"><a href="#cb83-86" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> (abs_exp_sub_one_le _).trans ?_</span>
+<span id="cb83-87"><a href="#cb83-87" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : |d i - (x i - m)| ≤ u * D := <span class="kw">by</span></span>
+<span id="cb83-88"><a href="#cb83-88" aria-hidden="true" tabindex="-1"></a>        <span class="cf">refine</span> hdi.trans (mul_le_mul_of_nonneg_left ?_ hu)</span>
+<span id="cb83-89"><a href="#cb83-89" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [abs_of_nonpos (<span class="kw">by</span> <span class="cf">linarith</span> [hm i hi])]; <span class="cf">linarith</span> [hD i hi]</span>
+<span id="cb83-90"><a href="#cb83-90" aria-hidden="true" tabindex="-1"></a>      <span class="cf">linarith</span> [exp_le_exp.mpr this]</span>
+<span id="cb83-91"><a href="#cb83-91" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> := hlocal.round (exp_pos _).le hu (he i hi)</span>
+<span id="cb83-92"><a href="#cb83-92" aria-hidden="true" tabindex="-1"></a>    <span class="cf">simpa</span> [add_sub_cancel] <span class="kw">using</span> this</span>
+<span id="cb83-93"><a href="#cb83-93" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> he0 : <span class="dv">0</span> ≤ (<span class="dv">1</span> + u) * exp (u * D) - <span class="dv">1</span> := <span class="kw">by</span></span>
+<span id="cb83-94"><a href="#cb83-94" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : <span class="dv">1</span> ≤ exp (u * D) := one_le_exp (mul_nonneg hu hD0)</span>
+<span id="cb83-95"><a href="#cb83-95" aria-hidden="true" tabindex="-1"></a>    nlinarith</span>
+<span id="cb83-96"><a href="#cb83-96" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- the computed sum</span></span>
+<span id="cb83-97"><a href="#cb83-97" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hsum : RelWithin ρ T S := <span class="kw">by</span></span>
+<span id="cb83-98"><a href="#cb83-98" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rcases</span> hS <span class="kw">with</span> ⟨rfl, -⟩ | ⟨t, hp, ht⟩</span>
+<span id="cb83-99"><a href="#cb83-99" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">exact</span> absurd <span class="cf">rfl</span> hne</span>
+<span id="cb83-100"><a href="#cb83-100" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> h1 := ht.within_rel hu he0 (y := <span class="kw">fun</span> i =&gt; exp (x i - m))</span>
+<span id="cb83-101"><a href="#cb83-101" aria-hidden="true" tabindex="-1"></a>        (<span class="kw">fun</span> i hi =&gt; ⟨(exp_pos _).le, hterm i (hp.subset hi)⟩)</span>
+<span id="cb83-102"><a href="#cb83-102" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [(hp.map _).sum_eq] <span class="kw">at</span> h1</span>
+<span id="cb83-103"><a href="#cb83-103" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> hlen := t.height_add_one_le</span>
+<span id="cb83-104"><a href="#cb83-104" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hp.length_eq] <span class="kw">at</span> hlen</span>
+<span id="cb83-105"><a href="#cb83-105" aria-hidden="true" tabindex="-1"></a>      <span class="cf">refine</span> h1.mono ?_ (<span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb83-106"><a href="#cb83-106" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hρdef, <span class="kw">show</span> (<span class="dv">1</span> + u) ^ n * exp (u * D) = (<span class="dv">1</span> + u) ^ (n - <span class="dv">1</span>) * ((<span class="dv">1</span> + u) * exp (u * D)) <span class="kw">by</span></span>
+<span id="cb83-107"><a href="#cb83-107" aria-hidden="true" tabindex="-1"></a>        <span class="cf">rw</span> [← mul_assoc, ← pow_succ, Nat.sub_add_cancel hn1]]</span>
+<span id="cb83-108"><a href="#cb83-108" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> : (<span class="dv">1</span> + u) ^ t.height ≤ (<span class="dv">1</span> + u) ^ (n - <span class="dv">1</span>) :=</span>
+<span id="cb83-109"><a href="#cb83-109" aria-hidden="true" tabindex="-1"></a>        pow_le_pow_right₀ (<span class="kw">by</span> <span class="cf">linarith</span>) (<span class="kw">by</span> <span class="cf">omega</span>)</span>
+<span id="cb83-110"><a href="#cb83-110" aria-hidden="true" tabindex="-1"></a>      <span class="kw">have</span> h2 : <span class="dv">0</span> ≤ <span class="dv">1</span> + ((<span class="dv">1</span> + u) * exp (u * D) - <span class="dv">1</span>) := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb83-111"><a href="#cb83-111" aria-hidden="true" tabindex="-1"></a>      nlinarith</span>
+<span id="cb83-112"><a href="#cb83-112" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- the log of the computed sum</span></span>
+<span id="cb83-113"><a href="#cb83-113" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hρ0 : <span class="dv">0</span> ≤ ρ := <span class="kw">by</span></span>
+<span id="cb83-114"><a href="#cb83-114" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : <span class="dv">1</span> ≤ (<span class="dv">1</span> + u) ^ n := one_le_pow₀ (<span class="kw">by</span> <span class="cf">linarith</span>)</span>
+<span id="cb83-115"><a href="#cb83-115" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> : <span class="dv">1</span> ≤ exp (u * D) := one_le_exp (mul_nonneg hu hD0)</span>
+<span id="cb83-116"><a href="#cb83-116" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [hρdef]; nlinarith</span>
+<span id="cb83-117"><a href="#cb83-117" aria-hidden="true" tabindex="-1"></a>  <span class="cf">obtain</span> ⟨hS1, hS2⟩ := abs_le.mp hsum</span>
+<span id="cb83-118"><a href="#cb83-118" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hSpos : <span class="dv">0</span> &lt; S := <span class="kw">by</span> nlinarith</span>
+<span id="cb83-119"><a href="#cb83-119" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hlog : |log S - log T| ≤ lam := <span class="kw">by</span></span>
+<span id="cb83-120"><a href="#cb83-120" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hTpos : <span class="dv">0</span> &lt; T := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb83-121"><a href="#cb83-121" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> h1ρ : <span class="dv">0</span> &lt; <span class="dv">1</span> - ρ := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb83-122"><a href="#cb83-122" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [← log_div hSpos.ne&#39; hTpos.ne&#39;]</span>
+<span id="cb83-123"><a href="#cb83-123" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hlo : <span class="dv">1</span> - ρ ≤ S / T := <span class="kw">by</span> <span class="cf">rw</span> [le_div_iff₀ hTpos]; <span class="cf">linarith</span></span>
+<span id="cb83-124"><a href="#cb83-124" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hhi : S / T ≤ <span class="dv">1</span> + ρ := <span class="kw">by</span> <span class="cf">rw</span> [div_le_iff₀ hTpos]; <span class="cf">linarith</span></span>
+<span id="cb83-125"><a href="#cb83-125" aria-hidden="true" tabindex="-1"></a>    <span class="kw">have</span> hl1 : log (<span class="dv">1</span> - ρ) ≤ -ρ := <span class="kw">by</span> <span class="cf">linarith</span> [log_le_sub_one_of_pos h1ρ]</span>
+<span id="cb83-126"><a href="#cb83-126" aria-hidden="true" tabindex="-1"></a>    <span class="cf">rw</span> [abs_le]</span>
+<span id="cb83-127"><a href="#cb83-127" aria-hidden="true" tabindex="-1"></a>    <span class="cf">constructor</span></span>
+<span id="cb83-128"><a href="#cb83-128" aria-hidden="true" tabindex="-1"></a>    · <span class="cf">rw</span> [hlam]; <span class="cf">linarith</span> [log_le_log h1ρ hlo]</span>
+<span id="cb83-129"><a href="#cb83-129" aria-hidden="true" tabindex="-1"></a>    · <span class="kw">have</span> := log_le_sub_one_of_pos (<span class="kw">show</span> <span class="dv">0</span> &lt; S / T <span class="kw">by</span> <span class="cf">positivity</span>)</span>
+<span id="cb83-130"><a href="#cb83-130" aria-hidden="true" tabindex="-1"></a>      <span class="cf">rw</span> [hlam]; <span class="cf">linarith</span></span>
+<span id="cb83-131"><a href="#cb83-131" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hlogT : <span class="dv">0</span> ≤ log T ∧ log T ≤ log n := ⟨log_nonneg hT1, log_le_log (<span class="kw">by</span> <span class="cf">linarith</span>) hTn⟩</span>
+<span id="cb83-132"><a href="#cb83-132" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hL&#39; := (rounded_iff hu _ _).mp hL</span>
+<span id="cb83-133"><a href="#cb83-133" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hLT : |L - log T| ≤ u * (log n + lam) + lam := <span class="kw">by</span></span>
+<span id="cb83-134"><a href="#cb83-134" aria-hidden="true" tabindex="-1"></a>    <span class="kw">calc</span> |L - log T| ≤ |L - log S| + |log S - log T| := abs_sub_le _ _ _</span>
+<span id="cb83-135"><a href="#cb83-135" aria-hidden="true" tabindex="-1"></a>      _ ≤ u * |log S| + lam := add_le_add hL&#39; hlog</span>
+<span id="cb83-136"><a href="#cb83-136" aria-hidden="true" tabindex="-1"></a>      _ ≤ u * (log n + lam) + lam := <span class="kw">by</span></span>
+<span id="cb83-137"><a href="#cb83-137" aria-hidden="true" tabindex="-1"></a>          gcongr</span>
+<span id="cb83-138"><a href="#cb83-138" aria-hidden="true" tabindex="-1"></a>          <span class="kw">calc</span> |log S| ≤ |log T| + |log S - log T| := <span class="kw">by</span></span>
+<span id="cb83-139"><a href="#cb83-139" aria-hidden="true" tabindex="-1"></a>                <span class="kw">have</span> := abs_add_le (log T) (log S - log T); <span class="cf">simpa</span> <span class="kw">using</span> this</span>
+<span id="cb83-140"><a href="#cb83-140" aria-hidden="true" tabindex="-1"></a>            _ ≤ log n + lam := <span class="kw">by</span> <span class="cf">rw</span> [abs_of_nonneg hlogT<span class="fl">.1</span>]; <span class="cf">linarith</span> [hlogT<span class="fl">.2</span>]</span>
+<span id="cb83-141"><a href="#cb83-141" aria-hidden="true" tabindex="-1"></a>  <span class="kw">have</span> hr&#39; := (rounded_iff hu _ _).mp hr</span>
+<span id="cb83-142"><a href="#cb83-142" aria-hidden="true" tabindex="-1"></a>  <span class="kw">calc</span> |r - (m + log T)| ≤ |r - (m + L)| + |L - log T| := <span class="kw">by</span></span>
+<span id="cb83-143"><a href="#cb83-143" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> := abs_add_le (r - (m + L)) (L - log T); ring_nf <span class="kw">at</span> this ⊢; <span class="cf">linarith</span></span>
+<span id="cb83-144"><a href="#cb83-144" aria-hidden="true" tabindex="-1"></a>    _ ≤ u * |m + L| + |L - log T| := <span class="kw">by</span> <span class="cf">linarith</span></span>
+<span id="cb83-145"><a href="#cb83-145" aria-hidden="true" tabindex="-1"></a>    _ ≤ u * (|m + log T| + |L - log T|) + |L - log T| := <span class="kw">by</span></span>
+<span id="cb83-146"><a href="#cb83-146" aria-hidden="true" tabindex="-1"></a>        gcongr</span>
+<span id="cb83-147"><a href="#cb83-147" aria-hidden="true" tabindex="-1"></a>        <span class="kw">have</span> := abs_add_le (m + log T) (L - log T); ring_nf <span class="kw">at</span> this ⊢; <span class="cf">linarith</span></span>
+<span id="cb83-148"><a href="#cb83-148" aria-hidden="true" tabindex="-1"></a>    _ = u * |m + log T| + (<span class="dv">1</span> + u) * |L - log T| := <span class="kw">by</span> <span class="cf">ring</span></span>
+<span id="cb83-149"><a href="#cb83-149" aria-hidden="true" tabindex="-1"></a>    _ ≤ _ := <span class="kw">by</span> gcongr</span>
+<span id="cb83-150"><a href="#cb83-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb83-151"><a href="#cb83-151" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> LogSumExp</span>
+<span id="cb83-152"><a href="#cb83-152" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb83-153"><a href="#cb83-153" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> BayesianNetworksProofs.ErrorBounds</span></code></pre></div>
 <!-- BayesianNetworksProofs/Roadmap.lean -->
 <h1 id="roadmap">Roadmap</h1>
-<div class="sourceCode" id="cb74"><pre
-class="sourceCode lean"><code class="sourceCode lean"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.OpenSemantics</span>
-<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.RefinementExamples</span></code></pre></div>
+<div class="sourceCode" id="cb84"><pre
+class="sourceCode lean"><code class="sourceCode lean"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.OpenSemantics</span>
+<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> BayesianNetworksProofs.Finite.RefinementExamples</span></code></pre></div>
 <p>The former <code>osem_compose</code> hole is now proved in
 <code>Finite/OpenSemantics.lean</code>, in the default target and axiom
 audit. Its original premises are retained by a compatibility theorem.
@@ -6520,9 +7652,19 @@ finite-model theorems. Of the IEEE arithmetic, one piece is covered:
 <code>_nearest_binary64</code>, the single rounding the exact fallbacks
 of ADR 0016 apply, returns the binary64 round-to-nearest-ties-to-even of
 every rational, overflow and signed zero included. That is a theorem
-about the transcribed algorithm on mathematical integers; the
-floating-point operations of the ordinary (non-fallback) paths, and
-Julia’s execution of the rounding, remain outside.</p>
+about the transcribed algorithm on mathematical integers. For the
+ordinary (non-fallback) paths, <code>Numeric/ErrorBounds.lean</code>
+proves forward error bounds under the standard rounding model (each
+operation’s result is its exact result times <code>1 + δ</code>,
+<code>|δ| ≤ u</code>): sums and products of nonnegative numbers in any
+association, variable elimination entrywise within relative
+<code>γ N</code> for an explicit <code>N</code>, the normalised
+posterior, and log-sum-exp. It also proves that correct binary64
+rounding satisfies that model with <code>u = 2 ^ -53</code> in the
+normal range. Underflow and overflow are excluded from those bounds, and
+that Julia’s Float64 operations are correctly rounded is assumed (IEEE
+754 and Julia’s semantics), not proved; Julia’s loop order and
+execution, and its execution of the rounding, remain outside.</p>
 <p>The general structural open-network category, including non-injective
 output legs, pass-through and coherent copy/discard, is now constructed
 separately in <code>CategoricalBayesianNetworks.jl/proofs/</code> (ADR

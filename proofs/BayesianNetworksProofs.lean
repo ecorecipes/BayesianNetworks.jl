@@ -23,3 +23,4 @@ import BayesianNetworksProofs.Finite.DSeparation
 import BayesianNetworksProofs.Finite.NumericalContracts
 import BayesianNetworksProofs.Finite.RefinementExamples
 import BayesianNetworksProofs.Numeric.Binary64
+import BayesianNetworksProofs.Numeric.ErrorBounds

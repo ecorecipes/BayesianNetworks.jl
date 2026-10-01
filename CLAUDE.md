@@ -253,8 +253,22 @@ rewording of the README, the docs and the vignettes:
   zero), and proves the transcriptions of `_rational_exponent`, `_nearest_binary64` and
   `_dyadic` correct on the full range (`rationalExponent_eq_log`, `nearestBinary64_roundsTo`,
   `dyadic_value`, and the round trip `nearestBinary64_value`). It covers the algorithm as
-  transcribed over mathematical integers and rationals, not Julia's execution, GMP, or any
-  other floating-point operation; uniqueness and monotonicity of rounding are not proved.
+  transcribed over mathematical integers and rationals, not Julia's execution or GMP; uniqueness
+  and monotonicity of rounding are not proved.
+- `Numeric/ErrorBounds.lean` gives forward error bounds for the ordinary Float64 paths under the
+  standard rounding model (`Rounded u x c`: `c = x(1+δ)`, `|δ| ≤ u`; `γ n = (1+u)^n - 1`). The
+  bridge `roundsTo_relative` derives `|value w - q| ≤ 2^-53 |q|` from `RoundsTo q w` when
+  `2^-1022 ≤ |q| < 2^1024 - 2^970` (`roundsTo_subnormal`: absolute `2^-1075` below that). Sums and
+  products of nonnegative numbers in any association (`sumRun_forward_error`,
+  `compProd_forward_error`), an approximate VE run `Run` entrywise within relative `γ N`,
+  `N = |fs| + Σ_{v ∈ vs} |states v| - 1` (`eliminateAll_forward_error`,
+  `conditioned_forward_error`), the posterior within `(1+γK)/(1-γK) - 1`,
+  `K = |M| + Σ_{v ∈ Qᶜ} |states v| + |query assignments|` (`ve_posterior_forward_error`), and
+  log-sum-exp on the log scale (`logSumExp_forward_error`, `exp`/`log` error `u` assumed).
+  Underflow and overflow are excluded (no absolute term outside the bridge); correct rounding
+  of Julia's Float64 operations is assumed, not proved; the theorems are about the factor
+  algebra, not Julia's loop order, execution, junction tree, BP or brute-force paths. SA-Pass
+  claim `bn.posterior-forward-error` pins the README sentence.
 - All former Roadmap holes are discharged, and the compatibility Roadmap target also
   builds warning-free. Every headline theorem belongs in `Audit.lean`.
 

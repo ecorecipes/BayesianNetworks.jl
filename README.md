@@ -170,12 +170,38 @@ Reporting:
   is the finite word's value, and `nearestBinary64_value` that rounding the value of a finite
   word returns that word, both zeros returning `+0.0`. These are theorems about the
   transcribed algorithm, not about Julia's execution of it or GMP's `BigInt` arithmetic.
+- `Numeric/ErrorBounds.lean` bounds the ordinary Float64 paths under the standard rounding
+  model, in which each operation's computed result is its exact result times `1 + δ` with
+  `|δ| ≤ u`, and `γ n = (1 + u)^n - 1`. Its bridge, `roundsTo_relative`, proves that IEEE
+  round-to-nearest of a rational `q` with `2^-1022 ≤ |q| < 2^1024 - 2^970` has relative error
+  at most `2^-53`, by exhibiting a finite word that near `q`; `roundsTo_subnormal` gives the
+  absolute error `2^-1075` below `2^-1022`. That Julia's Float64 operations round correctly is
+  IEEE 754 together with Julia's and the hardware's semantics, assumed and not proved.
+  Products of `k` and sums of `n` nonnegative numbers, in any order and association, are
+  within relative `γ(k-1)` and `γ(n-1)` (`compProd_forward_error`, `sumRun_forward_error`),
+  and `eliminateAll_forward_error` puts every entry of an approximate variable-elimination
+  run over nonnegative factors within relative `γ N` of the exact entry, `N` being the
+  number of factors plus the summed state counts of the eliminated variables, less one.
+  `ve_posterior_forward_error` proves that, for variable elimination over the compiled
+  nonnegative CPT factors and the evidence indicator with every product, sum and division
+  rounded in the standard model with `u ≥ 0`, in any order and association, whenever the
+  evidence mass is positive and `γ K < 1`, the computed evidence mass is within relative
+  `γ(K-1)` of the exact evidence mass and every computed posterior entry is within relative
+  `(1 + γ K)/(1 - γ K) - 1` of the exact posterior entry, where `K` is the number of
+  mechanisms plus the summed state counts of the eliminated variables plus the number of
+  query assignments. `logSumExp_forward_error` bounds the `_LogDomain` sum-out on the log
+  scale, taking relative error `u` for `exp` and `log` as a hypothesis. These bounds exclude
+  underflow and overflow (an evidence mass below `floatmin` goes to the exact fallback of ADR
+  0014 and ADR 0016), and they are theorems about the factor algebra under an abstract
+  rounding model, not about Julia's loop order or its execution.
 - These are exact finite-model/data results, not verification of Julia execution.
   In particular, the new raw-record compiler feeds the existing `FinBayesNet`
   reduct, whose parent sets erase slot multiplicity only after diagonal evaluation.
   Full ACSet/JSON/array translation, CliqueTrees construction and IEEE arithmetic
-  remain separate; of the IEEE arithmetic, only the algorithm of the one rounding the exact
-  fallbacks apply, `_nearest_binary64` (`Numeric/Binary64.lean`), is covered. Formal forest
+  remain separate. Of the IEEE arithmetic, the algorithm of the one rounding the exact
+  fallbacks apply, `_nearest_binary64` (`Numeric/Binary64.lean`), is proved correct, and the
+  ordinary paths have forward error bounds under the standard rounding model
+  (`Numeric/ErrorBounds.lean`), with correct rounding of Julia's operations assumed. Formal forest
   beliefs include outside-component scalar masses; Julia stores component-local beliefs
   and checks global mass separately. Their raw arrays must not be identified without that
   scaling relationship.

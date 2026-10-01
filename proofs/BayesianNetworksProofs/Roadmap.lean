@@ -19,9 +19,15 @@ adapters are not established merely by those finite-model theorems. Of the IEEE 
 one piece is covered: `Numeric/Binary64.lean` proves that the transcription of
 `_nearest_binary64`, the single rounding the exact fallbacks of ADR 0016 apply, returns the
 binary64 round-to-nearest-ties-to-even of every rational, overflow and signed zero included.
-That is a theorem about the transcribed algorithm on mathematical integers; the floating-point
-operations of the ordinary (non-fallback) paths, and Julia's execution of the rounding, remain
-outside.
+That is a theorem about the transcribed algorithm on mathematical integers. For the ordinary
+(non-fallback) paths, `Numeric/ErrorBounds.lean` proves forward error bounds under the standard
+rounding model (each operation's result is its exact result times `1 + δ`, `|δ| ≤ u`): sums
+and products of nonnegative numbers in any association, variable elimination entrywise within
+relative `γ N` for an explicit `N`, the normalised posterior, and log-sum-exp. It also proves
+that correct binary64 rounding satisfies that model with `u = 2 ^ -53` in the normal range.
+Underflow and overflow are excluded from those bounds, and that Julia's Float64 operations are
+correctly rounded is assumed (IEEE 754 and Julia's semantics), not proved; Julia's loop order
+and execution, and its execution of the rounding, remain outside.
 
 The general structural open-network category, including non-injective output legs,
 pass-through and coherent copy/discard, is now constructed separately in

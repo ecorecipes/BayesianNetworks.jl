@@ -13,6 +13,7 @@ assert_no_sorry BayesianNetworksProofs.Junction.queryPosterior_none_iff
 assert_no_sorry BayesianNetworksProofs.FinBayesNet.d_separation_sound
 assert_no_sorry BayesianNetworksProofs.Numerical.kernel_query_posterior_error
 assert_no_sorry BayesianNetworksProofs.Binary64.nearestBinary64_roundsTo
+assert_no_sorry BayesianNetworksProofs.ErrorBounds.ve_posterior_forward_error
 
 -- Concrete data, references, repeated slots and exact conditioning.
 #print axioms BayesianNetworksProofs.Raw.decodeId_none_iff
@@ -96,6 +97,32 @@ assert_no_sorry BayesianNetworksProofs.Binary64.nearestBinary64_roundsTo
 #print axioms BayesianNetworksProofs.Binary64.magnitude_injective
 #print axioms BayesianNetworksProofs.Binary64.magnitude_lt_threshold
 #print axioms BayesianNetworksProofs.Binary64.nearestBinary64_value
+
+-- Forward error bounds under the standard rounding model, and the bridge to binary64.
+#print axioms BayesianNetworksProofs.ErrorBounds.rounded_iff
+#print axioms BayesianNetworksProofs.ErrorBounds.RelWithin.mul
+#print axioms BayesianNetworksProofs.ErrorBounds.RelWithin.add
+#print axioms BayesianNetworksProofs.ErrorBounds.RelWithin.round
+#print axioms BayesianNetworksProofs.ErrorBounds.RelWithin.div
+#print axioms BayesianNetworksProofs.ErrorBounds.roundsTo_relative
+#print axioms BayesianNetworksProofs.ErrorBounds.roundsTo_subnormal
+#print axioms BayesianNetworksProofs.ErrorBounds.roundsTo_error
+#print axioms BayesianNetworksProofs.ErrorBounds.roundsTo_rounded
+#print axioms BayesianNetworksProofs.ErrorBounds.nearestBinary64_relative
+#print axioms BayesianNetworksProofs.ErrorBounds.nearestBinary64_subnormal
+#print axioms BayesianNetworksProofs.ErrorBounds.nearestBinary64_rounded
+#print axioms BayesianNetworksProofs.ErrorBounds.SumRun.within
+#print axioms BayesianNetworksProofs.ErrorBounds.ProdRun.within
+#print axioms BayesianNetworksProofs.ErrorBounds.compProd_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.sumRun_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.Run.fst
+#print axioms BayesianNetworksProofs.ErrorBounds.Run.good
+#print axioms BayesianNetworksProofs.ErrorBounds.eliminateAll_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.eliminateAll_marg_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.conditioned_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.normalize_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.ve_posterior_forward_error
+#print axioms BayesianNetworksProofs.ErrorBounds.logSumExp_forward_error
 
 -- Kernel-checked nonvacuity fixtures, including rational certificate checks.
 #print axioms BayesianNetworksProofs.RefinementExamples.raw_structure_checked

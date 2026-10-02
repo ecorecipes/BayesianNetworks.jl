@@ -183,6 +183,116 @@ using JSON3
               ref
     end
 
+    # A key repeated in an object, and a document nested too deeply, are FormatErrors that
+    # name the object or table. Before, JSON3 looked up the last copy of a repeated table
+    # while ACSets added parts for every copy, and JSON3's recursive parser overflowed the
+    # stack on deep nesting.
+    @testset "repeated keys and deep nesting" begin
+        ref = reference_habitat_bn()
+        base = json_bayesnet(ref)
+        function message(f, str)
+            try
+                f(str)
+                return "parsed"
+            catch e
+                e isa FormatError || rethrow()
+                return e.message
+            end
+        end
+        # The `Mechanism` table written twice: before, 14 mechanisms, 7 of them with target
+        # 0 and no name.
+        mech = JSON3.write(JSON3.read(base)[:acset][:Mechanism])
+        twice = replace(base,
+                        "\"Mechanism\":" * mech => "\"Mechanism\":" * mech *
+                                                   ",\"Mechanism\":" * mech)
+        @test twice != base
+        @test message(parse_json_bayesnet, twice) ==
+              "the table \"Mechanism\" appears more than once in the \"acset\" body"
+        # A column repeated in a row names the row; a key spelled with an escape is the same
+        # key (JSON3 unescapes it).
+        row = replace(base, "\"state_variable\":1," => "\"state_variable\":1,\"_id\":1,";
+                      count=1)
+        @test row != base
+        @test occursin("the key \"_id\" appears more than once in the object at " *
+                       "acset.State[1]", message(parse_json_bayesnet, row))
+        escaped = replace(base,
+                          "\"format\":\"bayesnet-acset\"," => "\"format\":\"bayesnet-acset\",\"form\\u0061t\":1,")
+        @test message(parse_json_bayesnet, escaped) ==
+              "the key \"format\" appears more than once in the top-level object"
+        # Every reader shares the check: a model document, a card and the CatColab readers.
+        m = reference_habitat_model()
+        s = json_model(m)
+        inp = JSON3.write(JSON3.read(s)[:acset][:Input])
+        model_twice = replace(s,
+                              "\"Input\":" * inp => "\"Input\":" * inp * ",\"Input\":" * inp)
+        @test model_twice != s
+        @test message(parse_json_model, model_twice) ==
+              "the table \"Input\" appears more than once in the \"acset\" body"
+        @test occursin("appears more than once",
+                       message(parse_json_model,
+                               replace(s,
+                                       "\"evidence\":{}" => "\"evidence\":{\"Climate\":\"dry\",\"Climate\":\"wet\"}")))
+        card = json_card(ModelCard(m))
+        @test occursin("appears more than once",
+                       message(parse_json_card,
+                               replace(card,
+                                       "\"license\":" => "\"license\":\"x\",\"license\":")))
+        @test occursin("appears more than once",
+                       message(parse_presentation_json,
+                               replace(presentation_json(m),
+                                       "\"objects\":" => "\"format\":1,\"objects\":")))
+        # The same key in different objects is not repeated.
+        @test parse_json_bayesnet(base) == ref
+        # Nesting: 512 levels are read (the envelope is then wrong), 513 are not, and
+        # 10,000 are a FormatError, never a StackOverflowError.
+        @test message(parse_json_bayesnet, "["^512 * "]"^512) ==
+              "expected a JSON object envelope"
+        @test occursin("nested more than 512 levels",
+                       message(parse_json_bayesnet, "["^513 * "]"^513))
+        for f in (parse_json_bayesnet, parse_json_model, parse_json_card,
+                  parse_presentation_json, parse_catcolab_schema)
+            for str in ("["^10_000 * "]"^10_000, "{\"a\":"^10_000 * "1" * "}"^10_000)
+                @test occursin("nested more than 512 levels", message(f, str))
+            end
+        end
+        # Brackets inside strings do not count.
+        @test parse_json_bayesnet(replace(base, "\"Climate\"" => "\"" * "["^600 * "\"")) isa
+              BayesNet
+    end
+
+    # The document is parsed once: the spellings of the numbers come from a scan of the
+    # text that stops at the end of the `"acset"` value, paired with the body's numbers in
+    # document order. Before, the whole document was parsed a second time.
+    @testset "the document is parsed once" begin
+        m = reference_habitat_model()
+        s = json_model(m)
+        sp = BayesianNetworks._json_number_spellings(s)[:acset]
+        @test sp isa BayesianNetworks._NumberSpellings
+        count_numbers(x) = x isa AbstractDict ? sum(count_numbers, values(x); init=0) :
+                           x isa AbstractVector ? sum(count_numbers, x; init=0) :
+                           x isa Number && !(x isa Bool) ? 1 : 0
+        @test length(sp.numbers) == count_numbers(JSON3.read(s)[:acset])
+        @test count_numbers(JSON3.read(s)) > length(sp.numbers)   # the tables are skipped
+        # The key may be escaped, and the body may come after the other sections.
+        escaped = replace(s, "\"acset\":" => "\"\\u0061cset\":"; count=1)
+        @test parse_json_model(escaped) == parse_json_model(s)
+        d = JSON3.read(s, Dict{String,Any})
+        reordered = "{" *
+                    join(("\"$k\":" * JSON3.write(d[k])
+                          for k in ("semantics", "evidence", "history", "extras",
+                                    "schema_version", "format", "acset")), ",") * "}"
+        @test parse_json_model(reordered) == parse_json_model(s)
+        @test occursin("integer literal",
+                       sprint(showerror,
+                              try
+                                  parse_json_model(replace(reordered,
+                                                           "\"state_position\":1" => "\"state_position\":1.0";
+                                                           count=1))
+                              catch e
+                                  e
+                              end))
+    end
+
     @testset "schema JSON" begin
         sj = schema_json(BayesNet)
         names(key) = Set(String[d["name"] for d in sj[key]])

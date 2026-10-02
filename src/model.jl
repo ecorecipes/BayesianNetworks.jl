@@ -164,7 +164,7 @@ The [`MechanismRecord`](@ref) snapshot of mechanism `m` (id or name): its name, 
 """
 function mechanism_record(bn::AbstractBayesNet, m)
     mid = _mechanism_id(bn, m)
-    return MechanismRecord(mechanism_name(bn, mid), kernel_ref(bn, mid),
+    return MechanismRecord(mechanism_name(bn, mid), _set_kernel_ref(bn, mid),
                            Symbol[variable_name(bn, p) for p in inputs(bn, mid)])
 end
 

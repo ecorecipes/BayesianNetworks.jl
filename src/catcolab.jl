@@ -207,11 +207,13 @@ function _hasfield(x, key::AbstractString)
     return x isa AbstractDict && (haskey(x, key) || haskey(x, Symbol(key)))
 end
 _str(x, key::AbstractString) = _as_string(_field(x, key), key)
+# A name: a string that a `Symbol` can hold (`_as_symbol`), kept as a string.
+_name(x, key::AbstractString) = String(_as_symbol(_field(x, key), key))
 function _label(x)
     label = _as_array(_field(x, "label"), "label")
     length(label) == 1 ||
         throw(_JSONShapeError("label", "an array of one string", label))
-    return _as_string(only(label), "label")
+    return String(_as_symbol(only(label), "label"))
 end
 
 _as_document(doc::AbstractString) = _read_json(doc)
@@ -259,11 +261,11 @@ function _read_generators(doc)
         tag = _str(j, "tag")
         if tag == "object"
             push!(gens,
-                  (_str(j, "id"), _str(j, "name"),
+                  (_str(j, "id"), _name(j, "name"),
                    _str(_field(j, "obType"), "content"), nothing, nothing))
         elseif tag == "morphism"
             push!(gens,
-                  (_str(j, "id"), _str(j, "name"),
+                  (_str(j, "id"), _name(j, "name"),
                    _mor_kind(_field(j, "morType")),
                    _str(_field(j, "dom"), "content"),
                    _str(_field(j, "cod"), "content")))
@@ -429,7 +431,7 @@ function presentation_json(bn::AbstractBayesNet)
     gens = [(name=string(mechanism_name(bn, mech)),
              dom=[string(variable_name(bn, p)) for p in inputs(bn, mech)],
              cod=[string(variable_name(bn, target(bn, mech)))],
-             kernel_ref=StructTypes.lower(kernel_ref(bn, mech)))
+             kernel_ref=StructTypes.lower(_set_kernel_ref(bn, mech)))
             for mech in mechanisms(bn)]
     return JSON3.write((format=PRESENTATION_FORMAT, objects=objs, generators=gens))
 end
@@ -453,11 +455,11 @@ function parse_presentation_json(str::AbstractString)
     return _decoding(_SHAPE_ERRORS, "the presentation document") do
         bn = BayesNet()
         for o in _as_array(_field(obj, "objects"), "objects")
-            add_variable!(bn, Symbol(_str(o, "name"));
+            add_variable!(bn, _as_symbol(_field(o, "name"), "name");
                           states=_as_symbols(_field(o, "states"), "states"))
         end
         for g in _as_array(_field(obj, "generators"), "generators")
-            gname = _str(g, "name")
+            gname = _name(g, "name")
             cod = _as_symbols(_field(g, "cod"), "cod")
             length(cod) == 1 ||
                 throw(FormatError("generator $gname must have exactly one codomain object"))

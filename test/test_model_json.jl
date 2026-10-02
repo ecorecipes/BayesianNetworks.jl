@@ -241,6 +241,66 @@ end
         @test_throws ArgumentError BayesianNetworks._kernel_ref_from(Dict("type" => 3))
     end
 
+    # Three data conditions that escaped as Base errors (ADR 0015): `"extras"` that is not
+    # an object (a `TypeError` from the model constructor), a NUL character in a name (an
+    # `ArgumentError` from `Symbol`), and a `"size"` whose product overflows `Int` (an
+    # `ArgumentError` from `reshape`, after the product wrapped).
+    @testset "extras, NUL characters and size overflow" begin
+        function message(f, str)
+            try
+                f(str)
+                return "parsed"
+            catch e
+                e isa FormatError || rethrow()
+                return e.message
+            end
+        end
+        for extras in ([1, 2], nothing, "x", 5)
+            msg = message(parse_json_model, edited(d -> (d["extras"] = extras), s))
+            @test occursin("\"extras\" must be an object", msg)
+        end
+        nul = "dr\0y"
+        @test occursin("must be a string without a NUL character",
+                       message(parse_json_model,
+                               edited(d -> (d["evidence"] = Dict("Climate" => nul)), s)))
+        @test occursin("NUL",
+                       message(parse_json_model,
+                               edited(d -> (d["history"][1]["kind"] = nul), s)))
+        @test occursin("NUL",
+                       message(parse_json_model,
+                               edited(d -> (d["history"][1]["added"]["kernel_ref"]["state"] = nul),
+                                      s)))
+        @test occursin("NUL",
+                       message(parse_json_model,
+                               edited(d -> (d["semantics"]["spaces"]["Climate"] = [nul,
+                                                                                   "normal",
+                                                                                   "wet"]),
+                                      s)))
+        js = presentation_json(m)
+        @test occursin("NUL",
+                       message(parse_presentation_json,
+                               edited(d -> (d["objects"][1]["name"] = nul), js)))
+        @test occursin("NUL",
+                       message(parse_presentation_json,
+                               edited(d -> (d["generators"][1]["name"] = nul), js)))
+        doc = catcolab_model(BayesNet)
+        nulled = deepcopy(doc)
+        nulled["obGenerators"][1]["label"] = [nul]
+        @test_throws FormatError parse_catcolab_schema(nulled)
+        @test_throws ArgumentError BayesianNetworks._kernel_ref_from(Dict("type" => "PointMassRef",
+                                                                          "state" => nul))
+        # 2^32 * 2^32 wraps to 0 in Int, the length of an empty table.
+        overflow = edited(d -> begin
+                              grazing(d)["size"] = [2^32, 2^32]
+                              grazing(d)["table"] = Float64[]
+                          end, s)
+        @test occursin("product is the length of \"table\" (0)",
+                       message(parse_json_model, overflow))
+        @test occursin("product is the length of \"table\" (2)",
+                       message(parse_json_model,
+                               edited(d -> (grazing(d)["size"] = [3]), s)))
+    end
+
     @testset "selective: other errors pass through" begin
         # A typed error from building the network is not rewrapped.
         js = presentation_json(m)

@@ -58,8 +58,10 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   pass-through contract (Formats errors from `read_bayesnet`, FiniteKernels errors from the
   kernel API and `SpaceMismatchError` from `JointTable`) and that the two Graphviz errors
   stay outside it, in their stand-alone submodule. Its `==` compares fields with `isequal`,
-  so that it agrees with `hash` (NaN fields equal, `-0.0 != 0.0`); every subtype,
-  downstream ones included, inherits both. `AnyBayesNetError` is the exported `Union` of the
+  so that it agrees with `hash` (NaN fields equal, `-0.0 != 0.0`); a `FiniteKernel` field,
+  alone or inside an array, tuple, pair or dictionary, is compared by its spaces and by
+  `isequal` on its table (`_isequal_field`), because the kernel's own `==` disagrees with its
+  `hash`. Every subtype, downstream ones included, inherits both. `AnyBayesNetError` is the exported `Union` of the
   three roots (`BayesNetError`, `FiniteKernelsError`, `BayesianNetworkFormatsError`) and the
   two Graphviz errors: for catching and dispatch, never for subtyping. It names the
   Graphviz types, so `errors.jl` is included after `graphviz.jl`.
@@ -69,6 +71,10 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   (Kahn), `moral_graph` (a `SimpleGraph`). Vertex id = variable part id.
 - `src/validation.jl`: `validate`, `validation_errors`, `Base.isvalid`. Check 0
   (`MissingAttributeError`) guards the others against attributes an `add_part!` left unset.
+  It does not read `Ref` attributes: an unset `kernel_ref` or `space_ref` is structurally
+  valid, and an operation that needs its value reads it through `_ref_value` /
+  `_set_kernel_ref` (`src/semantics.jl`), which raise `MissingAttributeError` naming the part
+  and the attribute, never a `MethodError`.
 - `src/canonicalize.jl`: deterministic renumbering (`canonicalize`, built on
   `_canonical_copy(bn, variable_order)`) and `is_isomorphic`. When variable names repeat the
   canonical form is not unique, so `is_isomorphic` searches the orderings that permute equally
@@ -132,7 +138,26 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   All enumerate joint states and are capped by `max_states`. The shared internals
   (`_closed_semantics`, `_factors`, `_product`, `_joint_atol`, `DEFAULT_MAX_STATES`) are used
   by `CategoricalBayesianNetworks.jl`'s `interpret`; changing their signatures changes that
-  package too.
+  package too. `marginal` and `conditional` share `_query` (validation, kernels as bound and
+  as `_Factor`s, evidence and query positions), the binary64 run `_binary64_run` over the
+  configurations consistent with the evidence (the same products as `_product`, so the
+  ordinary results are unchanged), and the exact run `_exact_cells`. The trust rule (ADR
+  0014, ADR 0016, agreed across the packages): a binary64 run is untrusted if its final mass
+  is not a normal positive number, or if any product it computed from operands that are all
+  nonzero has magnitude below `floatmin` of its element type, whether that product came out
+  subnormal or rounded all the way to 0.0; a product with an exactly zero operand is a
+  structural zero and does not count, and the check does not depend on mechanism order. An
+  untrusted run is recomputed exactly; a trusted run whose consistent configurations are all
+  structural zeros is impossible evidence without the exact run, and so is an exactly zero
+  column of `conditional`, which `on_zero` handles. The exact run reads each kernel at its
+  exact value (`_exact_entry`: `_dyadic` for a Float64, the exact dyadic value of a
+  `BigFloat`, a rational or integer itself), with zero normalised to exponent `0` so that a
+  zero does not enlarge the shifts. The tolerance rule, the same in both runs: a tolerated
+  negative entry takes part when it lies on a configuration consistent with the evidence
+  whose other entries are all nonzero; then the posterior is indeterminate if the evidence
+  mass is within `_joint_atol(atol, n)` or a cell of the queried posterior is negative. A
+  prior (no evidence) is exempt. `conditional` applies both rules per column of `given`,
+  and builds its kernel at the caller's `atol`.
 - `src/dynamic.jl`: `DynamicBayesNet(initial, transition; lags)` templates (lags by the
   naming convention `lagged(:X, k)` = `X[t-k]`, parsed by `lag_of`; unrolled names
   `variable_at(:X, t)` = `X_t`, parsed by `time_index`), `validate` / `validation_errors`
@@ -181,7 +206,17 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   `MethodError`. JSON3 reads `1.0`, `1e0` and `01` as the integer `1`, so an `"_id"`, hom or
   position is also checked by its spelling (`_json_number_spellings`, `_is_integer_literal`): it
   must be an integer literal. `Lean.Json.parse` gives `1e0` and `1.0e1` exponent `0`, so the Lean
-  pipeline from text accepts those; this reader does not. In memory, `validation_errors` reports
+  pipeline from text accepts those; this reader does not. A document is parsed once:
+  `_read_json` first scans the text (`_check_json_text`), rejecting an object that repeats a key
+  (JSON3 looks up the last copy, while ACSets adds parts for every copy of a table) and nesting
+  deeper than `_JSON_MAX_DEPTH = 512` levels (JSON3's recursive parser overflows the stack at a
+  few thousand), both `FormatError`s, then parses it with JSON3. `_json_number_spellings`
+  scans the text up to the end of the `"acset"` value, and `_parse_acset` pairs those spellings
+  with the body's numbers in document order (`_spelled_body`). `Lean.Json.parse` keeps the last
+  copy of a repeated key, so the Lean pipeline from text accepts a document this reader rejects.
+  A name read into a `Symbol` (`_as_symbol`, `_ref_symbol`, CatColab's `_name`) must not hold
+  a NUL character; a kernel record's `"size"` must multiply, in `BigInt`, to its table's
+  length; the model's `"extras"` must be an object. In memory, `validation_errors` reports
   an unset `Label`/`Position` attribute as `MissingAttributeError` and skips the checks that read
   attributes.
 - `src/graphics.jl`: `to_graphviz` for networks and models (a `Graphviz.Graph` built by hand)

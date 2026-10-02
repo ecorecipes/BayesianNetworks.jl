@@ -264,4 +264,33 @@ e_atol(f, args...; kw...) = caught_error(() -> f(args...; kw...)).atol
         @test kernel(m3, :Climate).table == [1.0, 0.0, 0.0]
         @test m == reference_habitat_model()            # untouched
     end
+
+    @testset "an unset kernel_ref is a MissingAttributeError" begin
+        # A mechanism added with `add_part!` and no `kernel_ref`. Structural validation
+        # does not read references, so the network is valid; an operation that needs the
+        # reference raises MissingAttributeError naming the part and the attribute. Before,
+        # each raised a MethodError (`_lookup_kernel`, `convert` or `lower`).
+        bn = BayesNet()
+        add_variable!(bn, :X; states=[:a, :b])
+        mech = add_part!(bn, :Mechanism; target=1, mechanism_name=:X_mechanism)
+        @test isempty(validation_errors(bn; closed=true))
+        mx = BayesModel(bn)
+        unset = MissingAttributeError(:Mechanism, mech, :kernel_ref)
+        for f in (() -> bind_kernel(mx, :X => state(space(mx, :X), [0.5, 0.5])),
+                  () -> bind_cpt(mx, :X => [0.5, 0.5]), () -> kernel(mx, :X),
+                  () -> validate(mx; closed=true, semantics=true),
+                  () -> marginal(mx, :X), () -> joint_distribution(mx),
+                  () -> mechanism_record(bn, mech), () -> presentation_json(bn),
+                  () -> do_intervention(mx, :X => :a), () -> proof_certificate(mx))
+            e = try
+                f()
+            catch err
+                err
+            end
+            @test e == unset
+        end
+        @test missing_kernels(mx) == [:X] && !has_semantics(mx)
+        @test semantic_errors(mx; semantics=true) == [unset]
+        @test isempty(semantic_errors(mx))
+    end
 end

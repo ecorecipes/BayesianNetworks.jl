@@ -54,7 +54,9 @@ Semantic layer:
   with typed checks of axis labels, parent order and normalisation (SPEC §11 items 8-10).
 - Reference evaluation: brute-force `joint_distribution` (a composable state) and
   `joint_table`, `marginal` and `conditional` with evidence, ancestral `sample` and
-  `empirical_marginal`. The categorical route to the same joint (`to_free_expression`,
+  `empirical_marginal`. A posterior whose binary64 run is untrusted (its evidence mass, or
+  a product it computed, below `floatmin`) is recomputed exactly and correctly rounded
+  (ADR 0014, ADR 0016). The categorical route to the same joint (`to_free_expression`,
   `categorical_joint`, Proposition 1) and the kernel semantics of open networks
   (`interpret`, Propositions 2 and 3) are in `CategoricalBayesianNetworks.jl`.
 - `read_bayesnet` / `write_bayesnet` through BayesianNetworkFormats.jl (Netica, GeNIe,
@@ -132,12 +134,15 @@ Reporting:
   `Finite/VariableElimination.lean` implements scoped finite-function bucket elimination
   and proves agreement with the existing joint marginal, including compilation of local
   mechanisms and independence of a duplicate-free elimination order.
-- `Finite/RawRecords.lean` and `Finite/ReferenceTables.lean` now check finite
+- The propositions above are about the original `FinBayesNet` / `OpenFinBayesNet` layer,
+  which has finite variable and mechanism types, unordered parent sets and functional
+  kernels. `Finite/RawRecords.lean` and `Finite/ReferenceTables.lean` now check finite
   variable/state/mechanism/input records, derive positional bijections and topological
   order, retain attributes and resolve named, policy and point-mass references.
   Repeated input slots compile diagonally; complete raw CPT columns, ordered labels,
   nonnegative rational weights and exact normalization are checked separately.
-  `proof_certificate(m)` supplies that data interface without changing bound numbers.
+  `proof_certificate(m)` supplies that data interface without changing bound numbers; the
+  literal certificate consumer checks it with `decide +kernel`, not native-decision axioms.
 - `Finite/JsonRecords.lean` decodes the ACSets JSON of `write_json_bayesnet`, from a parsed
   `Lean.Json` tree, into those records. `decodeTables_eq_ok` proves that the decoder succeeds
   with rows `t` exactly when every table of the document has `t`'s row count and every column
@@ -163,7 +168,8 @@ Reporting:
   local normalised kernels, that the moralized-ancestral **graph path** criterion implies
   the conditional-independence event identity. With nonnegative local kernels this has
   its probability interpretation; conditioning
-  is divided out only at positive mass. `Finite/NumericalContracts.lean` supplies
+  is divided out only at positive mass. It does not verify a concrete Julia graph-query
+  routine. `Finite/NumericalContracts.lean` supplies
   input-perturbation and posterior L1 bounds with an explicit evidence-mass floor (the
   bound and its smallness condition scale with the number of joint assignments), plus a
   rounded-product bound conditional on local arithmetic contracts.
@@ -180,6 +186,7 @@ Reporting:
   is the finite word's value, and `nearestBinary64_value` that rounding the value of a finite
   word returns that word, both zeros returning `+0.0`. These are theorems about the
   transcribed algorithm, not about Julia's execution of it or GMP's `BigInt` arithmetic.
+  Uniqueness and monotonicity of rounding are not proved.
 - `Numeric/ErrorBounds.lean` bounds the ordinary Float64 paths under the standard rounding
   model, in which each operation's computed result is its exact result times `1 + δ` with
   `|δ| ≤ u`, and `γ n = (1 + u)^n - 1`. Its bridge, `roundsTo_relative`, proves that IEEE
@@ -201,18 +208,24 @@ Reporting:
   mechanisms plus the summed state counts of the eliminated variables plus the number of
   query assignments. `logSumExp_forward_error` bounds the `_LogDomain` sum-out on the log
   scale, taking relative error `u` for `exp` and `log` as a hypothesis. These bounds exclude
-  underflow and overflow (an evidence mass below `floatmin` goes to the exact fallback of ADR
-  0014 and ADR 0016), and they are theorems about the factor algebra under an abstract
-  rounding model, not about Julia's loop order or its execution.
+  underflow and overflow (a run whose evidence mass, or a product it computed, is below
+  `floatmin` goes to the exact fallback of ADR 0014 and ADR 0016), and they are theorems
+  about the factor algebra under an abstract rounding model, not about Julia's loop order
+  or its execution, nor about the junction tree, belief propagation or brute-force paths.
 - These are exact finite-model/data results, not verification of Julia execution.
   In particular, the new raw-record compiler feeds the existing `FinBayesNet`
   reduct, whose parent sets erase slot multiplicity only after diagonal evaluation.
   Full ACSet/array translation, reference binding, CliqueTrees construction and IEEE
   arithmetic remain separate; of the JSON, only the decoding of a parsed tree into records is
-  proved (`Finite/JsonRecords.lean`), not the parsing of the text or Julia's writer. Of the IEEE arithmetic, the algorithm of the one rounding the exact
-  fallbacks apply, `_nearest_binary64` (`Numeric/Binary64.lean`), is proved correct, and the
-  ordinary paths have forward error bounds under the standard rounding model
-  (`Numeric/ErrorBounds.lean`), with correct rounding of Julia's operations assumed. Formal forest
+  proved (`Finite/JsonRecords.lean`), not the parsing of the text or Julia's writer. Of the
+  IEEE arithmetic, only two pieces are covered. The algorithm of the one rounding the exact
+  fallbacks apply, `_nearest_binary64`, is proved correct as transcribed over mathematical
+  integers and rationals (`Numeric/Binary64.lean`), not as Julia executes it with GMP, and
+  uniqueness and monotonicity of rounding are not proved. The factor algebra of variable
+  elimination has forward error bounds under the standard rounding model
+  (`Numeric/ErrorBounds.lean`), with underflow and overflow excluded and correct rounding of
+  Julia's Float64 operations assumed, not proved; they do not cover Julia's loop order or
+  execution, the junction tree, belief propagation or the brute-force paths. Formal forest
   beliefs include outside-component scalar masses; Julia stores component-local beliefs
   and checks global mass separately. Their raw arrays must not be identified without that
   scaling relationship.

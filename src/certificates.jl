@@ -90,7 +90,7 @@ function _proof_weight(x)
 end
 
 function _proof_binding(bn::AbstractBayesNet, mech::Int, k::FiniteKernel)
-    ref = _proof_ref(kernel_ref(bn, mech), :Mechanism, mech, mechanism_name(bn, mech))
+    ref = _proof_ref(_set_kernel_ref(bn, mech), :Mechanism, mech, mechanism_name(bn, mech))
     table = cpt(k)
     columns = NamedTuple[]
     # Reverse the iteration dimensions, not the table: the last parent varies fastest.
@@ -149,10 +149,11 @@ function proof_certificate(m::BayesModel; evidence=m.evidence, atol::Real=DEFAUL
     _proof_structure(bn)
     observations = _proof_evidence(evidence)
     variable_data = [(name=String(variable_name(bn, v)),
-                      space_ref=_proof_ref(space_ref(bn, v), :Variable, v,
+                      space_ref=_proof_ref(_ref_value(bn, :Variable, v, :space_ref),
+                                           :Variable, v,
                                            variable_name(bn, v))) for v in variables(bn)]
     mechanism_data = [(name=String(mechanism_name(bn, mech)), target=target(bn, mech),
-                       kernel_ref=_proof_ref(kernel_ref(bn, mech), :Mechanism, mech,
+                       kernel_ref=_proof_ref(_set_kernel_ref(bn, mech), :Mechanism, mech,
                                              mechanism_name(bn, mech)))
                       for mech in mechanisms(bn)]
 
@@ -167,7 +168,7 @@ function proof_certificate(m::BayesModel; evidence=m.evidence, atol::Real=DEFAUL
     captured_kernels = Dict{KernelRef,FiniteKernel}()
     binding_mechanisms = Int[]
     for mech in mechanisms(bn)
-        ref = kernel_ref(bn, mech)
+        ref = _set_kernel_ref(bn, mech)
         name = variable_name(bn, target(bn, mech))
         if ref isa PointMassRef
             ref.state in states(bn, target(bn, mech)) ||

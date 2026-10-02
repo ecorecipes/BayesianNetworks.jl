@@ -194,5 +194,36 @@ end
         @test sample[11] == sample[12]
         @test sample[13] != sample[14]
         @test sample[18] == sample[19] != sample[20]
+        # A `FiniteKernel` field: kernels whose tables differ only by the sign of a zero are
+        # `==` as kernels but hash apart, so the errors holding them are not equal; a
+        # kernel with a NaN entry equals itself. Before, `==` used the kernel's `==` while
+        # `hash` used its table, so equal errors could hash apart.
+        X = FiniteSpace(:X, [:a, :b])
+        kernel_with(t) = FiniteKernel(FiniteSpace(), X, t; check=false)
+        held = BayesNetError[KernelBindingError(:X, :kernel, kernel_with([0.0, 1.0]), 1),
+                             KernelBindingError(:X, :kernel, kernel_with([-0.0, 1.0]), 1),
+                             KernelBindingError(:X, :kernel, kernel_with([NaN, 1.0]), 1),
+                             KernelBindingError(:X, :kernel, kernel_with([NaN, 1.0]), 1),
+                             KernelBindingError(:X, :kernels, [kernel_with([0.0, 1.0])],
+                                                (1, kernel_with([0.0, 1.0]))),
+                             KernelBindingError(:X, :kernels, [kernel_with([-0.0, 1.0])],
+                                                (1, kernel_with([0.0, 1.0]))),
+                             KernelBindingError(:X, :kernels,
+                                                Dict(:a => kernel_with([0.0, 1.0])),
+                                                :b => kernel_with([NaN, 1.0])),
+                             KernelBindingError(:X, :kernels,
+                                                Dict(:a => kernel_with([0.0, 1.0])),
+                                                :b => kernel_with([NaN, 1.0]))]
+        @test kernel_with([0.0, 1.0]) == kernel_with([-0.0, 1.0])
+        @test hash(kernel_with([0.0, 1.0])) != hash(kernel_with([-0.0, 1.0]))
+        for a in held, b in held
+            @test (a == b) == isequal(a, b)
+            a == b && @test hash(a) == hash(b)
+        end
+        @test held[1] != held[2]
+        @test held[3] == held[4] && hash(held[3]) == hash(held[4])
+        @test held[5] != held[6]
+        @test held[7] == held[8]
+        @test all(a -> a == a, held)
     end
 end

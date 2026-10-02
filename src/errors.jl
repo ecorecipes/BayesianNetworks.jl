@@ -41,7 +41,9 @@ keywords raise Base's `ArgumentError`, and a missing file raises `SystemError`; 
 outside every root.
 
 Two errors of the same concrete type are `==` when their fields are pairwise `isequal`,
-so `==` agrees with `hash`: a `NaN` field equals itself, and `-0.0` differs from `0.0`.
+so `==` agrees with `hash`: a `NaN` field equals itself, and `-0.0` differs from `0.0`. A
+`FiniteKernel` field, alone or inside an array, tuple, pair or dictionary, is compared by
+its spaces and by `isequal` on its table, as its `hash` is formed.
 """
 abstract type BayesNetError <: Exception end
 
@@ -50,7 +52,33 @@ abstract type BayesNetError <: Exception end
 # `hash(a) == hash(b)`: `==` on the fields would make an error with a `NaN` field unequal to
 # itself, and one with a `-0.0` field equal to one with `0.0` but hashed differently.
 function Base.:(==)(a::T, b::T) where {T<:BayesNetError}
-    return all(isequal(getfield(a, f), getfield(b, f)) for f in fieldnames(T))
+    return all(_isequal_field(getfield(a, f), getfield(b, f)) for f in fieldnames(T))
+end
+
+# `isequal` for a field. A `FiniteKernel` defines `==` (entrywise `==` of the tables, so
+# `-0.0 == 0.0` and `NaN != NaN`) and no `isequal`, so `isequal` falls back to that `==`,
+# while its `hash` hashes the table and tells `-0.0` from `0.0`. A kernel is compared
+# instead by its spaces and by `isequal` on its table, which its `hash` agrees with, and so
+# is a kernel inside an array, tuple, pair or dictionary.
+_isequal_field(a, b) = isequal(a, b)
+function _isequal_field(a::FiniteKernel, b::FiniteKernel)
+    return a.dom == b.dom && a.codom == b.codom && isequal(a.table, b.table)
+end
+function _isequal_field(a::AbstractArray, b::AbstractArray)
+    return axes(a) == axes(b) && all(_isequal_field(x, y) for (x, y) in zip(a, b))
+end
+function _isequal_field(a::Tuple, b::Tuple)
+    return length(a) == length(b) && all(_isequal_field(x, y) for (x, y) in zip(a, b))
+end
+function _isequal_field(a::Pair, b::Pair)
+    return _isequal_field(a.first, b.first) && _isequal_field(a.second, b.second)
+end
+function _isequal_field(a::AbstractDict, b::AbstractDict)
+    length(a) == length(b) || return false
+    for (k, v) in a
+        haskey(b, k) && _isequal_field(v, b[k]) || return false
+    end
+    return true
 end
 
 function Base.hash(e::BayesNetError, h::UInt)
@@ -166,12 +194,22 @@ end
 """
     MissingAttributeError(part, id, attr)
 
-Part `id` of object `part` has no value for the `Label` or `Position` attribute `attr`,
-such as a state added with `add_part!` and no `state_position`. The constructors
-([`add_variable!`](@ref), [`add_state!`](@ref), ...) always set them; an ACSet built
-part by part may not. [`validation_errors`](@ref) reports it before the checks that read
-attributes. A JSON document cannot produce one: [`parse_json_bayesnet`](@ref) rejects a
-missing or `null` attribute as a [`FormatError`](@ref).
+Part `id` of object `part` has no value for the attribute `attr`. The constructors
+([`add_variable!`](@ref), [`add_state!`](@ref), ...) always set every attribute; an ACSet
+built part by part with `add_part!` may not. A JSON document cannot produce one:
+[`parse_json_bayesnet`](@ref) rejects a missing or `null` attribute as a
+[`FormatError`](@ref).
+
+- A `Label` or `Position` attribute, such as a state with no `state_position`, is
+  structural: [`validation_errors`](@ref) reports it before the checks that read
+  attributes.
+- A `Ref` attribute (`kernel_ref`, `space_ref`) is not read by structural validation, so a
+  network with an unset one stays structurally valid. An operation that needs its value
+  raises this error: binding or resolving a kernel ([`bind_kernel`](@ref),
+  [`kernel`](@ref), the evaluators), [`semantic_errors`](@ref) with `semantics = true`,
+  [`mechanism_record`](@ref), [`unroll`](@ref), [`proof_certificate`](@ref),
+  [`presentation_json`](@ref) and `ModelCard(m)`. [`missing_kernels`](@ref) counts such a
+  mechanism as missing its kernel.
 """
 struct MissingAttributeError <: BayesNetError
     part::Symbol

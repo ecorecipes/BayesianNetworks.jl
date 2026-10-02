@@ -21,14 +21,17 @@ const JSON_SCHEMA_VERSION = "0.1"
 #   missing key, and the `ArgumentError` of an unknown `KernelRef` type or of an
 #   unparsable time (`_decode_ref`, `_decode_time`). `_kernel_ref_from` itself keeps the
 #   `ArgumentError`, which the direct StructTypes path raises.
-# - In a kernel record, also the `DimensionMismatch` of a table whose length does not
-#   match its `"size"`, and the FiniteKernels errors of an invalid space or table.
+# - In a kernel record, also the FiniteKernels errors of an invalid space or table. A
+#   `"size"` whose product, taken in `BigInt`, is not the table's length is checked first.
 #
 # - A value of the wrong JSON type, or a record that is not an object, is a
 #   `_JSONShapeError` from the typed reads below (`_as_string`, `_as_int`, ...; `_field` and
 #   `_ref_field` check their container), which the record decoders convert with `KeyError`
 #   (`_SHAPE_ERRORS`). The reads check instead of converting blindly, so a `MethodError`
-#   still means a bug (ADR 0015).
+#   still means a bug (ADR 0015). A name (`_as_symbol`) is a string without a NUL
+#   character, which a `Symbol` cannot hold; the model's `"extras"` is an object.
+# - `_read_json` rejects a key repeated in any object of a document, and a document nested
+#   more than `_JSON_MAX_DEPTH` levels deep (`_check_json_text`).
 # - The `"acset"` body is checked against the schema first (`_check_acset_body`, below
 #   `_parse_acset`): every table and column, and the JSON type and range of every value,
 #   with the rules of the proved Lean decoder. A failure is a `FormatError` that names the
@@ -59,7 +62,7 @@ const _SHAPE_ERRORS = Union{KeyError,_JSONShapeError}
 
 function _json_kind(x)
     x === nothing && return "null"
-    x isa AbstractString && return "a string"
+    x isa AbstractString && return '\0' in x ? "a string with a NUL character" : "a string"
     x isa Bool && return "a boolean"
     x isa Number && return "the number $(x)"
     x isa AbstractDict && return "an object"
@@ -72,7 +75,12 @@ function _as_string(v, key)
     v isa AbstractString || throw(_JSONShapeError(string(key), "a string", v))
     return String(v)
 end
-_as_symbol(v, key) = Symbol(_as_string(v, key))
+# A name: a string that a `Symbol` can hold, so without a NUL character.
+function _as_symbol(v, key)
+    s = _as_string(v, key)
+    '\0' in s && throw(_JSONShapeError(string(key), "a string without a NUL character", v))
+    return Symbol(s)
+end
 function _as_float(v, key)
     v isa Real && !(v isa Bool) || throw(_JSONShapeError(string(key), "a number", v))
     return Float64(v)
@@ -95,57 +103,294 @@ _as_strings(v, key) = String[_as_string(x, key) for x in _as_array(v, key)]
 _as_symbols(v, key) = Symbol[_as_symbol(x, key) for x in _as_array(v, key)]
 
 # The text is parsed as text: `JSON3.read` of a `String` shorter than 255 bytes that names
-# an existing file would read that file instead, so the reader parses the code units.
+# an existing file would read that file instead, so the reader parses the code units. The
+# document is parsed once: `_check_json_text` and `_json_number_spellings` only scan it.
 function _read_json(str::AbstractString)
-    return _decoding(() -> JSON3.read(codeunits(String(str))), ArgumentError,
-                     "the text is not JSON")
+    bytes = codeunits(String(str))
+    _check_json_text(bytes)
+    return _decoding(() -> JSON3.read(bytes), ArgumentError, "the text is not JSON")
 end
 
-# The spellings of the numbers of a JSON text `str` that `_read_json` has read: the same
-# tree, with every number replaced by the string of its source text (`"1.0"`, `"1e0"`).
-# JSON3 reads every integral number as an `Int64`, so `1`, `1.0`, `1e0`, `1E0`, `10e-1`,
-# `1.`, `01` and `+1` are all the `Int64` 1 in `_read_json`'s tree; the ID, hom and
-# position columns of an `"acset"` body need the spelling (`_check_acset_body`).
+# Two checks of a JSON text, made on the text before it is parsed:
 #
-# Each number of `str`, outside a string, is quoted, and the result is read by JSON3 again,
-# so the tree has the shape and the keys of `_read_json`'s. A number starts with `-`, `+`
-# or a digit and runs to the next delimiter: JSON3 accepted `str`, so it is followed by
-# whitespace, `,`, `]` or `}`, and its text has no character that needs escaping.
+# - Nesting. JSON3's parser recurses once per level and overflows the stack at a few thousand
+#   levels, which a small file reaches. A document nested deeper than `_JSON_MAX_DEPTH`
+#   levels is a `FormatError`, never a `StackOverflowError`; BayesianNetworkFormats sets the
+#   same limit for its JSON.
+# - Repeated keys. No object may repeat a key. JSON leaves the meaning of a repeated key to
+#   the reader, and the readers disagree: JSON3 keeps every copy and looks up the last, which
+#   the checks after it would see, while ACSets' `parse_json_acset` adds parts for every copy
+#   of a table. `Lean.Json.parse`, which the Lean decoder trusts, keeps the last copy. Keys
+#   are compared unescaped, as JSON3 reads them.
+#
+# A text that is not JSON is left to JSON3, which says so; the scan only must not fail on it.
+const _JSON_MAX_DEPTH = 512
+
+# A key of an open object: the FNV-1a hash of its unescaped bytes, and its raw text
+# `bytes[first:last]`, or `text` when the raw text has an escape.
+struct _JSONKey
+    hash::UInt64
+    first::Int
+    last::Int
+    text::Union{Nothing,String}
+end
+
+function _fnv1a(bytes)
+    h = 0xcbf29ce484222325
+    for b in bytes
+        h = (h ⊻ b) * 0x00000100000001b3
+    end
+    return h
+end
+
+function _key_bytes(bytes, k::_JSONKey)
+    return k.text === nothing ? view(bytes, (k.first):(k.last)) :
+           codeunits(k.text)
+end
+
+# The class of a byte for `_check_json_text`: 1 a quote, 2 an opening bracket, 3 a closing
+# one, 4 a comma, 0 anything else.
+const _JSON_BYTE_CLASS = let t = zeros(UInt8, 256)
+    t[Int('"') + 1] = 1
+    t[Int('{') + 1] = t[Int('[') + 1] = 2
+    t[Int('}') + 1] = t[Int(']') + 1] = 3
+    t[Int(',') + 1] = 4
+    t
+end
+
+function _check_json_text(bytes::AbstractVector{UInt8})
+    n = length(bytes)
+    object = Bool[]                       # per open container: whether it is an object
+    opened = Int[]                        # per open container: the index of its bracket
+    first_key = Int[]                     # per open container: its first entry in `keys`
+    sets = Union{Nothing,Set{UInt64}}[]   # per open object of many keys: their hashes
+    keys = _JSONKey[]                     # the keys of the open objects, outermost first
+    in_object = false                     # the innermost open container is an object
+    key_next = false                      # in an object, the next string is a key
+    i = 1
+    @inbounds while i <= n
+        class = _JSON_BYTE_CLASS[bytes[i] + 1]
+        if class == 1
+            j = _json_string_end(bytes, i)
+            if key_next
+                _add_json_key!(keys, sets, object, opened, first_key, bytes, i, j)
+                key_next = false
+            end
+            i = j
+        elseif class == 2
+            is_object = bytes[i] == UInt8('{')
+            push!(object, is_object)
+            push!(opened, i)
+            push!(first_key, length(keys) + 1)
+            push!(sets, nothing)
+            length(object) > _JSON_MAX_DEPTH &&
+                throw(FormatError("the document is nested more than $(_JSON_MAX_DEPTH) levels deep"))
+            in_object = key_next = is_object
+        elseif class == 3
+            isempty(object) && return nothing
+            pop!(object)
+            pop!(opened)
+            pop!(sets)
+            resize!(keys, pop!(first_key) - 1)
+            in_object = !isempty(object) && object[end]
+            key_next = false
+        elseif class == 4
+            key_next = in_object
+        end
+        i += 1
+    end
+    return nothing
+end
+
+# Record the key `bytes[i:j]` (with its quotes) of the innermost open object, or throw if
+# the object has it already. An object of more than 16 keys keeps their hashes in a set.
+function _add_json_key!(keys, sets, object, opened, first_key, bytes, i::Int, j::Int)
+    raw = view(bytes, (i + 1):(j - 1))
+    text = UInt8('\\') in raw ?
+           _decoding(() -> JSON3.read(bytes[i:j], String), ArgumentError,
+                     "the text is not JSON") : nothing
+    key = _JSONKey(_fnv1a(text === nothing ? raw : codeunits(text)), i + 1, j - 1, text)
+    start = first_key[end]
+    set = sets[end]
+    if set === nothing || key.hash in set
+        for k in start:length(keys)
+            other = keys[k]
+            other.hash == key.hash && _key_bytes(bytes, other) == _key_bytes(bytes, key) &&
+                throw(FormatError(_repeated_key_message(bytes, key, object, opened,
+                                                        first_key, keys)))
+        end
+    end
+    push!(keys, key)
+    if set !== nothing
+        push!(set, key.hash)
+    elseif length(keys) - start + 1 > 16
+        sets[end] = Set{UInt64}(keys[k].hash for k in start:length(keys))
+    end
+    return nothing
+end
+
+_key_string(bytes, k::_JSONKey) = String(copy(_key_bytes(bytes, k)))
+
+# The message for a key repeated in the innermost open object, naming the object by its
+# path from the top level: a key of an enclosing object, or a one-based index of an
+# enclosing array.
+function _repeated_key_message(bytes, key::_JSONKey, object, opened, first_key, keys)
+    name = _key_string(bytes, key)
+    depth = length(object)
+    depth == 1 && return "the key \"$name\" appears more than once in the top-level object"
+    path = ""
+    for f in 2:depth
+        if object[f - 1]
+            # The parent's last key, which this container is the value of (none in a text
+            # that is not JSON).
+            k = first_key[f] - 1
+            step = k >= first_key[f - 1] ? _key_string(bytes, keys[k]) : "?"
+            f == 2 && step == "acset" && depth == 2 &&
+                return "the table \"$name\" appears more than once in the \"acset\" body"
+            path = isempty(path) ? step : "$path.$step"
+        else
+            path = "$path[$(_json_array_index(bytes, opened[f - 1], opened[f]))]"
+        end
+    end
+    return "the key \"$name\" appears more than once in the object at $path " *
+           "(arrays are numbered from 1)"
+end
+
+# The one-based index, in the array whose bracket is at `from`, of the element that starts
+# at `to`.
+function _json_array_index(bytes, from::Int, to::Int)
+    index, depth, i = 1, 0, from + 1
+    while i < to
+        b = bytes[i]
+        if b == UInt8('"')
+            i = _json_string_end(bytes, i)
+        elseif b == UInt8('{') || b == UInt8('[')
+            depth += 1
+        elseif b == UInt8('}') || b == UInt8(']')
+            depth -= 1
+        elseif b == UInt8(',') && depth == 0
+            index += 1
+        end
+        i += 1
+    end
+    return index
+end
+
+# The source spellings of the numbers in the top-level `"acset"` value of a JSON text that
+# `_read_json` has read, in document order. JSON3 reads every integral number as an
+# `Int64`, so `1`, `1.0`, `1e0`, `1E0`, `10e-1`, `1.`, `01` and `+1` are all the `Int64` 1 in
+# `_read_json`'s tree; the ID, hom and position columns of an `"acset"` body need the
+# spelling (`_check_acset_body`). `_json_number_spellings(str)[:acset]` is what
+# `_parse_acset` takes; it pairs the spellings with the numbers of the body it reads.
+struct _NumberSpellings
+    numbers::Vector{String}
+end
+
+# The text is scanned, not parsed again. JSON3 accepted it, so it is JSON: a number runs to
+# the next delimiter, and its text has no character that needs escaping. A token outside a
+# string that is not `true`, `false`, `null` or punctuation is a number. The scan stops at
+# the end of the `"acset"` value; a key is compared unescaped.
 const _JSON_NUMBER_ENDS = (UInt8(','), UInt8(']'), UInt8('}'), UInt8(':'), UInt8('['),
                            UInt8('{'), UInt8('"'), UInt8(' '), UInt8('\t'), UInt8('\n'),
                            UInt8('\r'))
 function _json_number_spellings(str::AbstractString)
     bytes = codeunits(String(str))
-    io = IOBuffer()
-    i, n, in_string = 1, length(bytes), false
+    numbers = String[]
+    n = length(bytes)
+    depth = 0             # containers open
+    key_next = false      # in the top-level object, the next string is a key
+    acset_next = false    # the last top-level key was "acset"
+    collecting = false    # inside the "acset" value
+    i = 1
     while i <= n
         b = bytes[i]
-        if in_string
-            write(io, b)
-            if b == UInt8('\\') && i < n
-                i += 1
-                write(io, bytes[i])
-            elseif b == UInt8('"')
-                in_string = false
+        if b == UInt8('"')
+            j = _json_string_end(bytes, i)
+            if depth == 1 && key_next
+                acset_next = _json_key_equals(bytes, i, j, "acset")
+                key_next = false
+            end
+            i = j + 1
+        elseif b == UInt8('{') || b == UInt8('[')
+            depth += 1
+            if depth == 1
+                key_next = b == UInt8('{')
+            elseif depth == 2 && acset_next
+                collecting = true
             end
             i += 1
-        elseif b == UInt8('"')
-            in_string = true
-            write(io, b)
+        elseif b == UInt8('}') || b == UInt8(']')
+            depth -= 1
+            collecting && depth == 1 && break
             i += 1
-        elseif b == UInt8('-') || b == UInt8('+') || UInt8('0') <= b <= UInt8('9')
+        elseif b == UInt8(',')
+            if depth == 1
+                key_next = true
+                acset_next = false
+            end
+            i += 1
+        elseif b in _JSON_NUMBER_ENDS
+            i += 1
+        else
             j = i
             while j <= n && !(bytes[j] in _JSON_NUMBER_ENDS)
                 j += 1
             end
-            write(io, UInt8('"'), view(bytes, i:(j - 1)), UInt8('"'))
+            literal = b == UInt8('t') || b == UInt8('f') || b == UInt8('n')
+            if !literal && (collecting || (depth == 1 && acset_next))
+                push!(numbers, String(bytes[i:(j - 1)]))
+            end
             i = j
-        else
-            write(io, b)
-            i += 1
         end
     end
-    return JSON3.read(take!(io))
+    return (acset=_NumberSpellings(numbers),)
+end
+
+# The index of the quote that closes the string opening at `i`.
+function _json_string_end(bytes, i::Int)
+    j = i + 1
+    while j <= length(bytes)
+        b = bytes[j]
+        b == UInt8('"') && return j
+        j += b == UInt8('\\') ? 2 : 1
+    end
+    return length(bytes)
+end
+
+# Whether the string token `bytes[i:j]` is the key `key`, unescaped as JSON3 reads it.
+function _json_key_equals(bytes, i::Int, j::Int, key::String)
+    raw = view(bytes, (i + 1):(j - 1))
+    UInt8('\\') in raw || return raw == codeunits(key)
+    return JSON3.read(bytes[i:j], String) == key
+end
+
+# The `"acset"` body with each number replaced by its spelling: the numbers of `body` in
+# document order (JSON3 iterates objects and arrays in document order) paired with
+# `spellings`.
+function _spelled_body(body, spellings::_NumberSpellings)
+    next = Ref(0)
+    tree = _spelled(body, spellings.numbers, next)
+    next[] == length(spellings.numbers) ||
+        error("internal: the \"acset\" body has $(next[]) numbers, its text $(length(spellings.numbers))")
+    return tree
+end
+
+function _spelled(x, numbers::Vector{String}, next::Ref{Int})
+    if x isa AbstractDict
+        out = OrderedDict{Symbol,Any}()
+        for (k, v) in x
+            out[Symbol(k)] = _spelled(v, numbers, next)
+        end
+        return out
+    elseif x isa AbstractVector
+        return Any[_spelled(v, numbers, next) for v in x]
+    elseif x isa Number && !(x isa Bool)
+        next[] += 1
+        next[] <= length(numbers) ||
+            error("internal: the \"acset\" body has more numbers than its text")
+        return numbers[next[]]
+    end
+    return x
 end
 
 # A JSON integer literal, `-?(0|[1-9][0-9]*)`: no fraction, no exponent, no `+` and no
@@ -218,7 +463,8 @@ function parse_json_bayesnet(str::AbstractString; type::Type{<:AbstractBayesNet}
     return _parse_envelope(_read_json(str), str, type)
 end
 
-# `obj` is `_read_json(str)`.
+# `obj` is `_read_json(str)`; `str` gives the spellings of the numbers of its `"acset"`
+# body.
 function _parse_envelope(obj, str, type)
     _check_envelope(obj, (:format, :schema_version, :acset))
     return _parse_acset(type, obj[:acset], _json_number_spellings(str)[:acset])
@@ -237,14 +483,15 @@ function _check_envelope(obj, keys)
 end
 
 # The `"acset"` body: checked against the schema of `type` (`_check_acset_body`), then read
-# by ACSets' `parse_json_acset`; `spellings` is the body in `_json_number_spellings` of the
-# document. See "Decoding failures": the one scoped catch-all of the decoders, because the
-# parser is third-party and reads only the document, so what it raises is about the
-# document (ADR 0015).
+# by ACSets' `parse_json_acset`; `spellings` is `_json_number_spellings(str)[:acset]` of the
+# document, or the body with each number replaced by its spelling. See "Decoding failures":
+# the one scoped catch-all of the decoders, because the parser is third-party and reads only
+# the document, so what it raises is about the document (ADR 0015).
 function _parse_acset(type, body, spellings)
     body isa AbstractDict ||
         throw(FormatError("the \"acset\" body must be an object, got $(_json_kind(body))"))
-    _check_acset_body(type, body, spellings)
+    spelled = spellings isa _NumberSpellings ? _spelled_body(body, spellings) : spellings
+    _check_acset_body(type, body, spelled)
     try
         return parse_json_acset(type, body)
     catch e
@@ -271,7 +518,9 @@ end
 #   the keys of its type, each a string;
 # - an `"_id"`, hom or `Position` is written as an integer literal (`_is_integer_literal`):
 #   JSON3 reads `1.0` and `1e0` as the `Int64` 1, so the check reads the number's spelling
-#   in `spellings`, the body in `_json_number_spellings` of the document.
+#   in `spellings`, the body with its numbers' spellings (`_spelled_body`);
+# - no table appears twice and no row repeats a column: `_read_json` rejects a repeated key
+#   in any object of the document.
 #
 # Unchecked, ACSets' parser read a missing table as zero rows, a missing attribute as unset
 # and a number as a label (`Symbol("5")`), and accepted a `null` attribute.
@@ -709,14 +958,19 @@ function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=Ba
         for (i, k) in enumerate(records)
             ref = _decoding(() -> _decode_ref(_ref_field(k, :ref), "kernel record $i"),
                             _SHAPE_ERRORS, "kernel record $i")
-            kernels[ref] = _decoding(Union{_SHAPE_ERRORS,DimensionMismatch,
-                                           _FINITE_KERNELS_ERRORS},
+            kernels[ref] = _decoding(Union{_SHAPE_ERRORS,_FINITE_KERNELS_ERRORS},
                                      "the kernel $(ref)") do
                 dom, codom = _parse_space(k[:dom], :dom), _parse_space(k[:codom], :codom)
                 values = Float64[_as_float(v, :table) for v in _as_array(k[:table], :table)]
                 dims = Int[_as_int(d, :size) for d in _as_array(k[:size], :size)]
                 all(>=(0), dims) ||
                     throw(_JSONShapeError("size", "an array of nonnegative integers",
+                                          k[:size]))
+                # The product is taken in BigInt: in Int it can wrap around to the length.
+                prod(big, dims; init=big(1)) == length(values) ||
+                    throw(_JSONShapeError("size",
+                                          "an array of sizes whose product is the " *
+                                          "length of \"table\" ($(length(values)))",
                                           k[:size]))
                 table = reshape(values, Tuple(dims))
                 try
@@ -731,15 +985,15 @@ function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=Ba
             end
         end
     end
-    evidence, events = _decoding(_JSONShapeError, "the model document") do
+    evidence, events, extras = _decoding(_JSONShapeError, "the model document") do
         ev = Dict{Symbol,Symbol}(Symbol(k) => _as_symbol(v, "evidence.$k")
                                  for (k, v) in _as_object(get(obj, :evidence, Dict()),
                                                           :evidence))
-        return ev, _as_array(get(obj, :history, []), :history)
+        return ev, _as_array(get(obj, :history, []), :history),
+               _from_json_extras(_as_object(get(obj, :extras, Dict()), :extras))
     end
     history = ModelEvent[_parse_event(e, "history record $i")
                          for (i, e) in enumerate(events)]
-    extras = _from_json_extras(get(obj, :extras, Dict()))
     return BayesModel(bn; spaces=spaces, kernels=kernels, evidence=evidence,
                       history=history, extras=extras)
 end

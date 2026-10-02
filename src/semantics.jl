@@ -207,7 +207,7 @@ function bind_kernel(m::BayesModel, b::Pair{Symbol,<:FiniteKernel};
     name, k = b
     bn = m.syntax
     mech = _mechanism_for(bn, name)
-    ref = kernel_ref(bn, mech)
+    ref = _set_kernel_ref(bn, mech)
     ref isa PointMassRef &&
         throw(KernelBindingError(variable_name(bn, target(bn, mech)), :intervention,
                                  "a mechanism that is not a hard intervention (use soft_intervention to replace it)",
@@ -277,13 +277,29 @@ end
 # Resolution
 ############
 
+# The value of the `Ref` attribute `attr` of part `id` of `ob`, for an operation that needs
+# it. An ACSet built part by part can leave a `Ref` unset (`nothing` or an attribute
+# variable): `validation_errors` does not read `Ref`s, so such a network is structurally
+# valid, but binding a kernel or resolving one is a `MissingAttributeError` naming the part
+# and the attribute, not a `MethodError`.
+function _ref_value(bn::AbstractVariableSpace, ob::Symbol, id::Integer, attr::Symbol)
+    ref = subpart(bn, Int(id), attr)
+    ref isa KernelRef || throw(MissingAttributeError(ob, Int(id), attr))
+    return ref
+end
+
+# The kernel reference of mechanism `m` (id or name), which must be set.
+function _set_kernel_ref(bn::AbstractBayesNet, m)
+    return _ref_value(bn, :Mechanism, _mechanism_id(bn, m), :kernel_ref)
+end
+
 # The kernel of mechanism `mech`, resolved through `lookup`: a dictionary keyed by
 # `KernelRef` (the model's `kernels`; a `NoRef` never resolves) or by target variable
 # name (a `NoRef` resolves like any other reference). Point-mass references are
 # materialised as `Pa(X) -> I -> X` (SPEC section 21.2); `nothing` when the reference
 # does not resolve.
 function _resolve_kernel(bn::AbstractBayesNet, mech::Integer, lookup)
-    ref = kernel_ref(bn, mech)
+    ref = _set_kernel_ref(bn, mech)
     if ref isa PointMassRef
         dom, codom = _mechanism_spaces(bn, mech)
         pm = point_mass(codom, ref.state)
@@ -326,13 +342,15 @@ end
     missing_kernels(m::BayesModel) -> Vector{Symbol}
 
 Names of the variables whose mechanism has a reference that does not resolve to a
-kernel, in mechanism part-id order.
+kernel, or no reference at all (an unset `kernel_ref`, which only an ACSet built part by
+part can have), in mechanism part-id order.
 """
 function missing_kernels(m::BayesModel)
     bn = m.syntax
     return Symbol[variable_name(bn, target(bn, mech))
                   for mech in mechanisms(bn)
-                  if _resolve_kernel(bn, mech, m.kernels) === nothing]
+                  if !(subpart(bn, mech, :kernel_ref) isa KernelRef) ||
+                     _resolve_kernel(bn, mech, m.kernels) === nothing]
 end
 
 """
@@ -357,7 +375,8 @@ every mechanism whose reference resolves, a kernel whose domain or codomain does
 ([`UnnormalizedKernelError`](@ref)), or that has an entry that is not finite or is below
 `-atol` ([`InvalidKernelEntryError`](@ref)); every one is collected rather than thrown, in
 mechanism order, so [`validate`](@ref) throws the first. With `semantics = true` a reference that does not
-resolve is a [`MissingKernelError`](@ref). Kernels that are not `FiniteKernel`s
+resolve is a [`MissingKernelError`](@ref), and a mechanism with no reference at all (an
+unset `kernel_ref`) a [`MissingAttributeError`](@ref). Kernels that are not `FiniteKernel`s
 (alternative semantics) are not checked.
 """
 function semantic_errors(m::BayesModel; semantics::Bool=false, atol::Real=DEFAULT_ATOL)
@@ -375,6 +394,10 @@ function semantic_errors(m::BayesModel; semantics::Bool=false, atol::Real=DEFAUL
     end
     for mech in mechanisms(bn)
         x = variable_name(bn, target(bn, mech))
+        if !(subpart(bn, mech, :kernel_ref) isa KernelRef)
+            semantics && push!(errs, MissingAttributeError(:Mechanism, mech, :kernel_ref))
+            continue
+        end
         k = _resolve_kernel(bn, mech, m.kernels)
         if k === nothing
             semantics && push!(errs, MissingKernelError(x, kernel_ref(bn, mech)))

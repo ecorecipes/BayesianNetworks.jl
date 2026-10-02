@@ -202,7 +202,8 @@ function ModelCard(m::BayesModel; kw...)
                 states=Dict{Symbol,Vector{Symbol}}(x => states(bn, x) for x in vars),
                 state_definitions=Dict{Symbol,String}(x => "" for x in vars),
                 mechanisms=mechs,
-                kernel_refs=Dict{Symbol,KernelRef}(k => kernel_ref(bn, k) for k in mechs),
+                kernel_refs=Dict{Symbol,KernelRef}(k => _set_kernel_ref(bn, k)
+                                                   for k in mechs),
                 history=history(m))
     return ModelCard(; merge(defaults, NamedTuple(kw))...)
 end

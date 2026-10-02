@@ -73,11 +73,12 @@ using EcologicalBayesianNetworks
 # environment does not list them.
 const JSON3 = BayesianNetworks.JSON3
 const Random = Base.require(Base.PkgId(Base.UUID("9a3f8284-a2c9-5f02-9a11-845980a1fd5c"),
-                                        "Random"))
+                                       "Random"))
 const MersenneTwister = Random.MersenneTwister
 
 const BN_PROOFS = normpath(joinpath(@__DIR__, ".."))
-const ID_PROOFS = normpath(joinpath(@__DIR__, "..", "..", "..", "InfluenceDiagrams.jl", "proofs"))
+const ID_PROOFS = normpath(joinpath(@__DIR__, "..", "..", "..", "InfluenceDiagrams.jl",
+                                    "proofs"))
 const BN_EXE = joinpath(BN_PROOFS, ".lake", "build", "bin", "check_records")
 const ID_EXE = joinpath(ID_PROOFS, ".lake", "build", "bin", "check_records")
 const CERT_EXE = joinpath(ID_PROOFS, ".lake", "build", "bin", "check_certificate")
@@ -139,7 +140,8 @@ function id_summary(id, axes)
         push!(lines, "decision $dn: $a", "information $dn: $(joinlabels(info))")
         infoaxes, action = axes[dn]
         ax = ["$(n) [$(joinlabels(ls))]" for (n, ls) in infoaxes]
-        push!(lines, "policy $dn: $(join(ax, " x ")) -> $(action[1]) [$(joinlabels(action[2]))]")
+        push!(lines,
+              "policy $dn: $(join(ax, " x ")) -> $(action[1]) [$(joinlabels(action[2]))]")
     end
     for u in parts(id, :Utility)
         sc = [variable_name(id, v) for v in utility_scope(id, u)]
@@ -214,12 +216,13 @@ function compare(kind, name, path, exe, julia_lines, x; note="")
         end
     end
     if julia_valid(x) && (isempty(topo) || !check_topological(x, only(topo);
-                                                             information=kind == "ID"))
+                                                              information=kind == "ID"))
         push!(diffs, "topological order rejected: $(isempty(topo) ? "none" : only(topo))")
     end
     ok = isempty(diffs)
     push!(RESULTS, (kind=kind, name=name, ok=ok, diffs=diffs, note=note, status=status))
-    println(rpad(ok ? "PASS" : "FAIL", 6), rpad(kind, 4), name, isempty(note) ? "" : "  ($note)")
+    println(rpad(ok ? "PASS" : "FAIL", 6), rpad(kind, 4), name,
+            isempty(note) ? "" : "  ($note)")
     for d in first(diffs, 8)
         println("        ", d)
     end
@@ -263,7 +266,8 @@ end
 # fixture exists in the ecosystem, so it is built here, with random numbers.
 function car_buyer_diagram()
     return influence_diagram(:Condition => [:peach, :lemon],
-                             :FirstTest => [:none, :steering, :fuel_electrical, :transmission],
+                             :FirstTest => [:none, :steering, :fuel_electrical,
+                                            :transmission],
                              :FirstResult => [:no_result, :zero, :one, :two],
                              :SecondTest => [:none, :differential],
                              :SecondResult => [:no_result, :zero, :one],
@@ -328,7 +332,7 @@ end
 println("\n== Model zoo ==")
 for spec in MODEL_SPECS
     name = spec.name
-    (is_builtin(spec) || EcologicalBayesianNetworks.is_available(name)) || begin
+    if !(is_builtin(spec) || EcologicalBayesianNetworks.is_available(name))
         println("SKIP  zoo $name  ($(spec.redistribution), not available locally)")
         continue
     end
@@ -380,10 +384,12 @@ function mutate(kind, base, label, f!)
     status, lean = run_lean(kind == "BN" ? BN_EXE : ID_EXE, path)
     leanres = status == 0 ? "ACCEPTED" : "rejected: " * first(lean)
     jres = julia_reads(kind, path)
-    push!(MUTATIONS, (kind=kind, label=label, lean_ok=status != 0, lean=leanres, julia=jres))
-    println(rpad(status != 0 ? "PASS" : "FAIL", 6), rpad(kind, 4), rpad(label, 34), "| julia: ",
+    push!(MUTATIONS,
+          (kind=kind, label=label, lean_ok=status != 0, lean=leanres, julia=jres))
+    println(rpad(status != 0 ? "PASS" : "FAIL", 6), rpad(kind, 4), rpad(label, 34),
+            "| julia: ",
             jres)
-    println("        lean: ", leanres)
+    return println("        lean: ", leanres)
 end
 
 let base = joinpath(OUT, "bn_reference_habitat_bn.json")
@@ -415,10 +421,12 @@ let base = joinpath(OUT, "bn_reference_habitat_bn.json")
                            "input_variable" => 7, "input_position" => 1)))
 end
 let base = joinpath(OUT, "id_umbrella.json")
-    mutate("ID", base, "missing table DecisionPrecedence", a -> delete!(a, "DecisionPrecedence"))
+    mutate("ID", base, "missing table DecisionPrecedence",
+           a -> delete!(a, "DecisionPrecedence"))
     mutate("ID", base, "hom out of range (information_variable 9)",
            a -> (a["InformationInput"][1]["information_variable"] = 9))
-    mutate("ID", base, "missing column utility_ref", a -> delete!(a["Utility"][1], "utility_ref"))
+    mutate("ID", base, "missing column utility_ref",
+           a -> delete!(a["Utility"][1], "utility_ref"))
     mutate("ID", base, "wrong type (decision_name number)",
            a -> (a["Decision"][1]["decision_name"] = 3))
     mutate("ID", base, "information_position 0",
@@ -464,16 +472,18 @@ function verdict_case(base, label, f!)
     ok = lv == jv && ln == jn
     push!(VERDICTS, (label=label, ok=ok, lean=(lv, ln), julia=(jv, jn), detail=detail))
     lnote = startswith(first_line, "error") ? " ($first_line)" : ""
-    println(rpad(ok ? "PASS" : "FAIL", 6), rpad(label, 52), "| lean: valid $lv, names $ln$lnote",
+    println(rpad(ok ? "PASS" : "FAIL", 6), rpad(label, 52),
+            "| lean: valid $lv, names $ln$lnote",
             " | julia: valid $jv, names $jn ($detail)")
     return ok
 end
 
 decision_id(a, name) = findfirst(r -> r["decision_name"] == name, a["Decision"])
 function add_precedence!(a, earlier, later)
-    push!(a["DecisionPrecedence"],
-          Dict("_id" => length(a["DecisionPrecedence"]) + 1,
-               "earlier" => decision_id(a, earlier), "later" => decision_id(a, later)))
+    return push!(a["DecisionPrecedence"],
+                 Dict("_id" => length(a["DecisionPrecedence"]) + 1,
+                      "earlier" => decision_id(a, earlier),
+                      "later" => decision_id(a, later)))
 end
 
 let base = joinpath(OUT, "id_" * slug("two_stage (oil wildcatter)") * ".json")
@@ -481,9 +491,15 @@ let base = joinpath(OUT, "id_" * slug("two_stage (oil wildcatter)") * ".json")
     verdict_case(base, "consistent precedence (Test before Drill)",
                  a -> add_precedence!(a, "Test", "Drill"))
     verdict_case(base, "duplicate precedence row (Test before Drill, twice)",
-                 a -> (add_precedence!(a, "Test", "Drill"); add_precedence!(a, "Test", "Drill")))
+                 a -> begin
+                     add_precedence!(a, "Test", "Drill")
+                     add_precedence!(a, "Test", "Drill")
+                 end)
     verdict_case(base, "precedence cycle (Test-Drill-Test)",
-                 a -> (add_precedence!(a, "Test", "Drill"); add_precedence!(a, "Drill", "Test")))
+                 a -> begin
+                     add_precedence!(a, "Test", "Drill")
+                     add_precedence!(a, "Drill", "Test")
+                 end)
     verdict_case(base, "precedence against information (Drill before Test)",
                  a -> add_precedence!(a, "Drill", "Test"))
     verdict_case(base, "precedence self-loop (Test before Test)",
@@ -504,7 +520,8 @@ end
 let base = joinpath(OUT, "id_" * slug("car_buyer (built here, random numbers)") * ".json")
     verdict_case(base, "car buyer: three-decision precedence cycle",
                  a -> add_precedence!(a, "Purchase", "FirstTest"))
-    verdict_case(base, "car buyer: precedence skipping a decision (FirstTest before Purchase)",
+    verdict_case(base,
+                 "car buyer: precedence skipping a decision (FirstTest before Purchase)",
                  a -> add_precedence!(a, "FirstTest", "Purchase"))
 end
 
@@ -520,9 +537,12 @@ function run_cert(diagram, cert)
         l = filter(x -> startswith(x, prefix), lines)
         isempty(l) ? "-" : strip(l[1][(length(prefix) + 1):end])
     end
-    fails = [l for l in lines if endswith(l, ": FAIL") || startswith(l, "certificate: error") ||
-                                 startswith(l, "error")]
-    return (status=p.exitcode, matches=field("matches: "), exact=field("exactly normalised: "),
+    fails = [l
+             for l in lines
+             if endswith(l, ": FAIL") || startswith(l, "certificate: error") ||
+                startswith(l, "error")]
+    return (status=p.exitcode, matches=field("matches: "),
+            exact=field("exactly normalised: "),
             nonneg=field("nonnegative: "), epsilon=field("normalisation error epsilon: "),
             nchance=field("chance variables n: "), umax=field("utility bound Umax: "),
             gap=field("optimality gap 2e: "),
@@ -555,11 +575,14 @@ function cert_case(name, diagram, mode, export_cert)
     write(path, JSON3.write(cert))
     r = run_cert(diagram, path)
     ok = r.status == 0 && r.matches == "yes"
-    push!(CERTS, (name=name, mode=mode, ok=ok, exact=r.exact, nonneg=r.nonneg, fails=r.fails))
-    println(rpad(ok ? "PASS" : "FAIL", 6), rpad("$name [$mode]", 60), "| matches $(r.matches),",
+    push!(CERTS,
+          (name=name, mode=mode, ok=ok, exact=r.exact, nonneg=r.nonneg, fails=r.fails))
+    println(rpad(ok ? "PASS" : "FAIL", 6), rpad("$name [$mode]", 60),
+            "| matches $(r.matches),",
             " nonnegative $(r.nonneg), exactly normalised $(r.exact)")
     # Printed only: the approximate-optimality bound (`certificate_approx_optimal`).
-    println("      ", rpad("", 60), "| epsilon $(r.epsilon), n $(r.nchance), Umax $(r.umax),",
+    println("      ", rpad("", 60),
+            "| epsilon $(r.epsilon), n $(r.nchance), Umax $(r.umax),",
             " gap 2e $(r.gap), approx $(r.approx)")
     for f in r.fails
         println("        ", f)
@@ -596,8 +619,9 @@ function cert_mutation(name, label, f!)
     rejected = r.status != 0
     why = isempty(r.fails) ? "matches $(r.matches)" : join(r.fails, "; ")
     push!(CERT_MUTATIONS, (name=name, label=label, rejected=rejected, why=why))
-    println(rpad(rejected ? "PASS" : "FAIL", 6), rpad("$name: $label", 64), "| lean: ",
-            rejected ? "rejected ($why)" : "ACCEPTED")
+    return println(rpad(rejected ? "PASS" : "FAIL", 6), rpad("$name: $label", 64),
+                   "| lean: ",
+                   rejected ? "rejected ($why)" : "ACCEPTED")
 end
 
 if haskey(CERT_BASES, "umbrella")
@@ -636,7 +660,8 @@ if haskey(CERT_BASES, "two_stage (oil wildcatter)")
                   d -> reverse!(d["decision_order"]))
     cert_mutation("two_stage (oil wildcatter)", "information slots swapped (Drill)",
                   d -> (s = d["decisions"][2]["information"];
-                        (s[1]["variable"], s[2]["variable"]) = (s[2]["variable"], s[1]["variable"])))
+                        (s[1]["variable"], s[2]["variable"]) = (s[2]["variable"],
+                                                                s[1]["variable"])))
 end
 
 # Version-2 certificates: Julia's recorded solution against the exact Lean run.
@@ -662,8 +687,10 @@ function run_cert2(diagram, cert)
              "theorem recorded_solution_approx_optimal_evidence",
              "theorem recorded_binary64_near_optimal_evidence")
     return merge((status=r.status, matches=r.matches, exact=r.exact, fails=r.fails),
-                 NamedTuple{Tuple(Symbol.(replace.(keys_, " " => "_")))}(Tuple(field(k * ": ")
-                                                                               for k in keys_)))
+                 NamedTuple{Tuple(Symbol.(replace.(keys_, " " => "_")))}(Tuple(field(k *
+                                                                                     ": ")
+                                                                               for k in
+                                                                                   keys_)))
 end
 
 function solution_case(name, diagram, mode, run, export_cert)
@@ -685,13 +712,15 @@ function solution_case(name, diagram, mode, run, export_cert)
               r.theorem_recorded_solution_optimal
     near = evidence ? r.theorem_recorded_binary64_near_optimal_evidence :
            r.theorem_recorded_binary64_near_optimal
-    push!(SOLUTIONS, (name=name, mode=mode, run=run, ok=ok, arith=arith, evidence=evidence,
-                      agree=r.actions_agree, entries=r.solution_entries,
-                      exactly=exactly, near=near, r=r))
+    push!(SOLUTIONS,
+          (name=name, mode=mode, run=run, ok=ok, arith=arith, evidence=evidence,
+           agree=r.actions_agree, entries=r.solution_entries,
+           exactly=exactly, near=near, r=r))
     status = ok ? "PASS" : "FAIL"
     println(rpad(status, 6), rpad(label, 62), "| $(arith), data $(r.solution_data), plan ",
             "$(r.solution_plan), entries $(r.solution_entries), actions agree $(r.actions_agree)")
-    println("      ", rpad("", 62), "| value $(r.recorded_value) vs exact $(r.exact_value): ",
+    println("      ", rpad("", 62),
+            "| value $(r.recorded_value) vs exact $(r.exact_value): ",
             "discrepancy $(r.value_discrepancy); action loss $(r.action_loss), score ",
             "discrepancy $(r.score_discrepancy)")
     if evidence
@@ -700,7 +729,8 @@ function solution_case(name, diagram, mode, run, export_cert)
                 "solutionWithinE $(r.solutionWithin); optimal $(exactly), approx ",
                 "$(r.theorem_recorded_solution_approx_optimal_evidence), binary64 near $(near)")
     else
-        println("      ", rpad("", 62), "| solutionMatches $(r.solutionMatches), solutionWithin ",
+        println("      ", rpad("", 62),
+                "| solutionMatches $(r.solutionMatches), solutionWithin ",
                 "$(r.solutionWithin); optimal $(exactly), approx ",
                 "$(r.theorem_recorded_solution_approx_optimal), binary64 ",
                 "$(r.theorem_recorded_binary64_approx_optimal), near $(near); sliced run: ",
@@ -730,9 +760,11 @@ end
 # Hard evidence: the same models, observed. The diagram file is the unobserved one (evidence is
 # not part of the ACSet); the rational companions are those of the unobserved certificate, whose
 # cells are the same.
-const EVIDENCE_CASES = [("umbrella", [:Forecast => :sunny]), ("umbrella", [:Weather => :rainy]),
+const EVIDENCE_CASES = [("umbrella", [:Forecast => :sunny]),
+                        ("umbrella", [:Weather => :rainy]),
                         ("two_stage (oil wildcatter)", [:Oil => :wet]),
-                        ("reference_grazing", [:ClimateForecast => :dry, :SoilMoisture => :low])]
+                        ("reference_grazing",
+                         [:ClimateForecast => :dry, :SoilMoisture => :low])]
 for (name, ev) in EVIDENCE_CASES
     haskey(CERT_BASES, name) || continue
     c = only(x for x in CERT_MODELS if x.name == name)
@@ -744,7 +776,8 @@ for (name, ev) in EVIDENCE_CASES
                                      exact_tables=companions(b64))))
         for (run, backend) in (("dve", true), ("stable", STABLE))
             p = solution_case(label, c.diagram, mode, run,
-                              () -> export_dve_certificate(observed; kw..., solution=backend))
+                              () -> export_dve_certificate(observed; kw...,
+                                                           solution=backend))
             p === nothing || (SOLUTION_BASES[(label, mode, run)] = p)
         end
     end
@@ -757,8 +790,9 @@ function solution_mutation(name, mode, run, label, f!)
     diagram = only(c.diagram for c in CERT_MODELS if c.name == first(split(name, " | ")))
     doc = JSON3.read(read(base, String), Dict{String,Any})
     f!(doc)
-    path = joinpath(OUT, "solmut_" * slug(name) * "_" * slug(mode) * "_" * run * "_" *
-                         slug(label) * ".json")
+    path = joinpath(OUT,
+                    "solmut_" * slug(name) * "_" * slug(mode) * "_" * run * "_" *
+                    slug(label) * ".json")
     write(path, JSON3.write(doc))
     r = run_cert2(diagram, path)
     rejected = r.status != 0
@@ -769,9 +803,11 @@ function solution_mutation(name, mode, run, label, f!)
     else
         "solutionMatches $(r.solutionMatches), solutionWithin $(r.solutionWithin)"
     end
-    push!(SOLUTION_MUTATIONS, (name=name, label="$label [$mode, $run]", rejected=rejected, why=why))
-    println(rpad(rejected ? "PASS" : "FAIL", 6), rpad("$name: $label [$mode, $run]", 72),
-            "| lean: ", rejected ? "rejected ($why)" : "ACCEPTED")
+    push!(SOLUTION_MUTATIONS,
+          (name=name, label="$label [$mode, $run]", rejected=rejected, why=why))
+    return println(rpad(rejected ? "PASS" : "FAIL", 6),
+                   rpad("$name: $label [$mode, $run]", 72),
+                   "| lean: ", rejected ? "rejected ($why)" : "ACCEPTED")
 end
 
 # Entry `at` [0, 0] of the second policy (Drill) of the oil wildcatter has the action state "8".
@@ -788,12 +824,15 @@ for (mode, run) in (("rational", "stable"), ("binary64", "dve"))
                       d -> pop!(d["solution"]["policies"][2]["entries"]))
     solution_mutation(OIL, mode, run, "wrong value",
                       d -> (v = d["solution"]["value"];
-                            haskey(v, "q") ? (v["q"]["num"] = string(parse(BigInt, v["q"]["num"]) +
-                                                                    parse(BigInt, v["q"]["den"]))) :
+                            haskey(v, "q") ?
+                            (v["q"]["num"] = string(parse(BigInt, v["q"]["num"]) +
+                                                    parse(BigInt, v["q"]["den"]))) :
                             (v["f64"] = string(reinterpret(UInt64,
                                                            reinterpret(Float64,
-                                                                       parse(UInt64, v["f64"];
-                                                                             base=16)) + 1.0);
+                                                                       parse(UInt64,
+                                                                             v["f64"];
+                                                                             base=16)) +
+                                                           1.0);
                                                base=16, pad=16))))
     solution_mutation(OIL, mode, run, "axes in the wrong order (Drill)",
                       d -> reverse!(d["solution"]["policies"][2]["axes"]))
@@ -801,17 +840,20 @@ end
 solution_mutation(OIL, "rational", "stable", "wrong score (Drill, row [0, 0])",
                   d -> (sc = d["solution"]["policies"][2]["entries"][1]["score"]["q"];
                         sc["num"] = string(parse(BigInt, sc["num"]) + 1)))
-solution_mutation(OIL, "rational", "stable", "version 2 with the version-1 keys (no solution)",
+solution_mutation(OIL, "rational", "stable",
+                  "version 2 with the version-1 keys (no solution)",
                   d -> delete!(d, "solution"))
 solution_mutation(OIL, "rational", "stable", "version 1 with a solution (fifteen keys)",
                   d -> (d["version"] = 1))
 solution_mutation(OIL, "rational", "stable", "missing solution key (policies)",
                   d -> delete!(d["solution"], "policies"))
-solution_mutation(OIL, "rational", "stable", "ill-typed solution key (exact_fallback a string)",
+solution_mutation(OIL, "rational", "stable",
+                  "ill-typed solution key (exact_fallback a string)",
                   d -> (d["solution"]["exact_fallback"] = "no"))
 # A solution recorded under one observation, checked against another (or none).
 const UMB_EV = "umbrella | Forecast=sunny"
-solution_mutation(UMB_EV, "rational", "stable", "evidence on another state (Forecast=rainy)",
+solution_mutation(UMB_EV, "rational", "stable",
+                  "evidence on another state (Forecast=rainy)",
                   d -> (d["evidence"]["hard"][1]["state_index"] = 2))
 solution_mutation(UMB_EV, "rational", "stable", "evidence row removed",
                   d -> empty!(d["evidence"]["hard"]))
@@ -850,8 +892,9 @@ println("Version-2 certificates agreeing with the exact Lean run: $(nsol) of $(l
         "$(count(r -> r.exactly == "applies", compared)); recorded_binary64_near_optimal " *
         "applies to $(count(r -> r.near == "applies", compared)).")
 for r in compared
-    r.ok || println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
-                    "disagrees with the exact Lean run")
+    r.ok ||
+        println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
+                "disagrees with the exact Lean run")
 end
 # The sliced run's checker on certificates without evidence: the same verdict as the plain one.
 sliced_verdict(r) = r.arith == "exact_rational" ? r.r.solutionMatchesE : r.r.solutionWithinE
@@ -870,13 +913,14 @@ println("Version-2 certificates with hard evidence agreeing with the exact slice
         "$(count(r -> r.exactly == "applies", withev)); recorded_binary64_near_optimal_evidence " *
         "applies to $(count(r -> r.near == "applies", withev)).")
 for r in withev
-    r.ok || println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
-                    "disagrees with the exact sliced Lean run")
+    r.ok ||
+        println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
+                "disagrees with the exact sliced Lean run")
 end
 nsmut = count(r -> r.rejected, SOLUTION_MUTATIONS)
 println("Solution mutations rejected by Lean: $(nsmut) of $(length(SOLUTION_MUTATIONS)).")
 exit(npass == length(RESULTS) && nmut == length(MUTATIONS) && naccept == 0 &&
-     nverdict == length(VERDICTS) && ncert == length(CERTS) &&
-     ncmut == length(CERT_MUTATIONS) && nsol == length(compared) &&
-     nsliced == length(compared) && nsolE == length(withev) &&
-     nsmut == length(SOLUTION_MUTATIONS) ? 0 : 1)
+         nverdict == length(VERDICTS) && ncert == length(CERTS) &&
+         ncmut == length(CERT_MUTATIONS) && nsol == length(compared) &&
+         nsliced == length(compared) && nsolE == length(withev) &&
+         nsmut == length(SOLUTION_MUTATIONS) ? 0 : 1)

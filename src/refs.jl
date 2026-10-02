@@ -89,14 +89,22 @@ function _ref_string(x, key::Symbol)
     return String(v)
 end
 
+# A name field of a reference: a string that a `Symbol` can hold.
+function _ref_symbol(x, key::Symbol)
+    v = _ref_string(x, key)
+    '\0' in v &&
+        throw(ArgumentError("the KernelRef field \"$key\" must not contain a NUL character"))
+    return Symbol(v)
+end
+
 function _kernel_ref_from(x)
     ty = _ref_string(x, :type)
     if ty == "NamedRef"
         return NamedRef(_ref_string(x, :id))
     elseif ty == "PointMassRef"
-        return PointMassRef(Symbol(_ref_string(x, :state)))
+        return PointMassRef(_ref_symbol(x, :state))
     elseif ty == "PolicyRef"
-        return PolicyRef(Symbol(_ref_string(x, :decision)))
+        return PolicyRef(_ref_symbol(x, :decision))
     elseif ty == "NoRef"
         return NoRef()
     else

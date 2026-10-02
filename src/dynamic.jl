@@ -444,7 +444,8 @@ function _add_slice!(out::BayesNet, template::BayesNet, t::Integer)
                                     inputs=[_unrolled_name(variable_name(template, p), t)
                                             for p in inputs(template, mech)],
                                     name=_unrolled_mechanism_name(mname, x, t),
-                                    kernel_ref=_unrolled_ref(kernel_ref(template, mech),
+                                    kernel_ref=_unrolled_ref(_set_kernel_ref(template,
+                                                                             mech),
                                                              mname, x, t))
     end
     return mmap
@@ -677,7 +678,7 @@ function _copy_kernels!(ks::AbstractDict{KernelRef}, out::BayesNet, tm::BayesMod
     for mech in mechanisms(bn)
         ref = kernel_ref(out, mmap[mech])
         (ref isa NamedRef || ref isa PolicyRef) || continue
-        k = _lookup_kernel(bn, mech, kernel_ref(bn, mech), kernels(tm))
+        k = _lookup_kernel(bn, mech, _set_kernel_ref(bn, mech), kernels(tm))
         k === nothing && continue
         ks[ref] = k isa FiniteKernel ? _map_axes(k, x -> _unrolled_name(x, t)) : k
     end

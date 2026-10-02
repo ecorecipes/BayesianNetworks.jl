@@ -47,7 +47,7 @@ Every exception this package defines is a [`BayesNetError`](@ref), apart from th
 
 ## Canonical forms and serialisation
 
-ACSet equality is sensitive to part numbering, so [`canonicalize`](@ref) renumbers parts deterministically (variables by name, states by position, mechanisms by target, inputs by position); [`is_isomorphic`](@ref) compares canonical forms. [`json_bayesnet`](@ref) / [`parse_json_bayesnet`](@ref) and the file variants wrap ACSets' JSON representation in a `{"format", "schema_version", "acset"}` envelope, and [`schema_json`](@ref) returns the schema description that CI compares against the schema emitted by the Lean project in `proofs/`. The Lean `SchemaDesc` terms and the Julia `BasicSchema` declarations are two hand-written definitions checked to agree (`lake exe emit_schema --check` and a Julia test); neither is generated from, or the source of truth for, the other.
+ACSet equality is sensitive to part numbering, so [`canonicalize`](@ref) renumbers parts deterministically (variables by name, states by position, mechanisms by target, inputs by position); [`is_isomorphic`](@ref) compares canonical forms. [`json_bayesnet`](@ref) / [`parse_json_bayesnet`](@ref) and the file variants wrap ACSets' JSON representation in a `{"format", "schema_version", "acset"}` envelope. The readers check a document before converting it, and raise [`FormatError`](@ref) for one they cannot decode, for an object that repeats a key, and for nesting deeper than 512 levels. [`schema_json`](@ref) returns the schema description that CI compares against the schema emitted by the Lean project in `proofs/`. The Lean `SchemaDesc` terms and the Julia `BasicSchema` declarations are two hand-written definitions checked to agree (`lake exe emit_schema --check` and a Julia test); neither is generated from, or the source of truth for, the other.
 
 ## Open networks and composition
 
@@ -81,7 +81,7 @@ kernel(m, :Occupancy)                                     # FiniteKernel Habitat
 
 ## Evaluation
 
-[`joint_distribution`](@ref) enumerates every assignment and returns the joint as a state `I -> X_1 ⊗ ... ⊗ X_n` (a `FiniteKernel`, so it composes); [`joint_table`](@ref) gives a named-axis array. [`marginal`](@ref marginal(::BayesModel, ::AbstractVector{Symbol})) conditions on the model's evidence and sums out the rest; [`conditional`](@ref) returns a kernel. [`sample`](@ref) draws ancestrally in topological order and [`empirical_marginal`](@ref) turns the draws back into a state. `CategoricalBayesianNetworks.jl`'s `categorical_joint` computes the same joint by building the string diagram as a `FreeMarkovCategory` expression and evaluating it with MarkovCategories' functor; its tests check the two against each other (Proposition 1).
+[`joint_distribution`](@ref) enumerates every assignment and returns the joint as a state `I -> X_1 ⊗ ... ⊗ X_n` (a `FiniteKernel`, so it composes); [`joint_table`](@ref) gives a named-axis array. [`marginal`](@ref marginal(::BayesModel, ::AbstractVector{Symbol})) conditions on the model's evidence and sums out the rest; [`conditional`](@ref) returns a kernel. Both compute in binary64 first. A run whose evidence mass, or a product along the way, falls below `floatmin` is recomputed exactly on the values as bound, and each cell is rounded once (ADR 0014, ADR 0016). So rare evidence is answered, and [`ImpossibleEvidenceError`](@ref) means probability exactly zero. A tolerated negative entry in `[-atol, 0)` takes part in the posterior when it lies on a configuration consistent with the evidence whose other entries are all nonzero. When one does, [`IndeterminatePosteriorError`](@ref) is raised if the evidence mass is within the tolerance budget of zero or a cell of the returned posterior is negative. A prior marginal, with no evidence, is exempt. [`sample`](@ref) draws ancestrally in topological order and [`empirical_marginal`](@ref) turns the draws back into a state. `CategoricalBayesianNetworks.jl`'s `categorical_joint` computes the same joint by building the string diagram as a `FreeMarkovCategory` expression and evaluating it with MarkovCategories' functor; its tests check the two against each other (Proposition 1).
 
 Every one of them takes `atol`, the normalisation tolerance used for the validation, the per-mechanism kernel check and the kernel returned. A model read from a file carries rounded probabilities ([`read_bayesnet`](@ref) uses `1e-6`) and must be evaluated with the tolerance it was read with, exactly as [`validate`](@ref validate(::BayesModel)) requires: `marginal(m, :Occupancy; atol = 1e-6)`.
 
@@ -105,6 +105,29 @@ finite-data bridge, including repeated-slot diagonal evaluation, state labels,
 reference resolution and exact normalization checks. [`proof_certificate`](@ref)
 exports the corresponding raw records and exact bound numbers; see
 [the certificate guide](certificates.md).
+
+`Finite/JsonRecords.lean` proves the one piece of the JSON route: decoding a parsed
+`Lean.Json` tree in the ACSets layout that [`json_bayesnet`](@ref) writes into those
+records is faithful, inverts its encoder, fails on a missing table or column, an
+out-of-range hom ID or a value of the wrong JSON type, and with the computed causal rank
+succeeds exactly on valid documents. `Lean.Json.parse` and Julia's JSON3/ACSets writer are
+trusted, not proved. `Lean.Json.parse` gives `1e0` the exponent `0` and keeps the last copy
+of a repeated key, so the Lean pipeline from text accepts documents that
+[`parse_json_bayesnet`](@ref) rejects.
+
+`Numeric/Binary64.lean` proves the transcriptions of `_rational_exponent`,
+`_nearest_binary64` and `_dyadic` (`src/exact_rounding.jl`) correct over mathematical
+integers and rationals: `_nearest_binary64` rounds every rational to the nearest binary64
+word, ties to even, with overflow to infinity and signed zero. That is the one rounding the
+exact fallback of [`marginal`](@ref marginal(::BayesModel, ::AbstractVector{Symbol})) and
+[`conditional`](@ref) applies to each cell. The proof covers the algorithm as transcribed,
+not Julia's execution of it or GMP's `BigInt` arithmetic, and uniqueness and monotonicity
+of rounding are not proved. `Numeric/ErrorBounds.lean` gives forward error bounds for the
+factor algebra of variable elimination under the standard rounding model, relating them to
+binary64 through the proved rounding in the normal range. Underflow and overflow are
+excluded, and correct rounding of Julia's Float64 operations is assumed, not proved. The
+bounds are not about Julia's loop order or execution, the junction tree, belief
+propagation or the brute-force paths of this package.
 
 `Finite/Posterior.lean` proves normalized posterior and evidence-preparation
 identities on partial assignments, rejecting zero global mass.

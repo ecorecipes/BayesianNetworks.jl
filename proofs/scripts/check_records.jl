@@ -55,6 +55,15 @@
 # entry, a wrong value, axes in the wrong order, and the version and key-count exclusions) must
 # be rejected.
 #
+# The fifth part also writes version-2 certificates of models with hard evidence (`observe`):
+# the umbrella with an observed forecast and, separately, an observed weather, the oil
+# wildcatter with an observed `Oil`, and the grazing diagram with an observed climate forecast
+# and soil moisture, in both numeric modes and both runs. `check_certificate` compares them with
+# the exact Lean run on the data sliced at the observed states (`solutionMatchesE`,
+# `solutionWithinE`; Julia's order with the observed variables put back), and prints the run's
+# evidence probability. For every certificate without evidence it also checks that the sliced
+# run's verdict equals the plain one.
+#
 # Trusted, not proved: Lean.Json.parse, Julia's JSON3/ACSets writer, and this script.
 
 using BayesianNetworks
@@ -646,7 +655,12 @@ function run_cert2(diagram, cert)
              "actions agree", "actions differing", "action loss", "score discrepancy",
              "solutionMatches", "solutionWithin", "theorem recorded_solution_optimal",
              "theorem recorded_solution_approx_optimal",
-             "theorem recorded_binary64_approx_optimal", "solution entries")
+             "theorem recorded_binary64_approx_optimal",
+             "theorem recorded_binary64_near_optimal", "solution entries",
+             "evidence probability", "solutionMatchesE", "solutionWithinE",
+             "theorem recorded_solution_optimal_evidence",
+             "theorem recorded_solution_approx_optimal_evidence",
+             "theorem recorded_binary64_near_optimal_evidence")
     return merge((status=r.status, matches=r.matches, exact=r.exact, fails=r.fails),
                  NamedTuple{Tuple(Symbol.(replace.(keys_, " " => "_")))}(Tuple(field(k * ": ")
                                                                                for k in keys_)))
@@ -667,21 +681,31 @@ function solution_case(name, diagram, mode, run, export_cert)
     evidence = r.evidence_rows != "0"
     verdict = arith == "exact_rational" ? r.solutionMatches : r.solutionWithin
     ok = r.status == 0 && r.matches == "yes" && verdict == "yes"
+    exactly = evidence ? r.theorem_recorded_solution_optimal_evidence :
+              r.theorem_recorded_solution_optimal
+    near = evidence ? r.theorem_recorded_binary64_near_optimal_evidence :
+           r.theorem_recorded_binary64_near_optimal
     push!(SOLUTIONS, (name=name, mode=mode, run=run, ok=ok, arith=arith, evidence=evidence,
                       agree=r.actions_agree, entries=r.solution_entries,
-                      exactly=r.theorem_recorded_solution_optimal, r=r))
-    status = ok ? "PASS" : (evidence ? "SKIP" : "FAIL")
+                      exactly=exactly, near=near, r=r))
+    status = ok ? "PASS" : "FAIL"
     println(rpad(status, 6), rpad(label, 62), "| $(arith), data $(r.solution_data), plan ",
             "$(r.solution_plan), entries $(r.solution_entries), actions agree $(r.actions_agree)")
     println("      ", rpad("", 62), "| value $(r.recorded_value) vs exact $(r.exact_value): ",
             "discrepancy $(r.value_discrepancy); action loss $(r.action_loss), score ",
             "discrepancy $(r.score_discrepancy)")
-    println("      ", rpad("", 62), "| solutionMatches $(r.solutionMatches), solutionWithin ",
-            "$(r.solutionWithin); optimal $(r.theorem_recorded_solution_optimal), approx ",
-            "$(r.theorem_recorded_solution_approx_optimal), binary64 ",
-            "$(r.theorem_recorded_binary64_approx_optimal)")
-    evidence && println("      ", rpad("", 62), "| evidence rows $(r.evidence_rows): the Lean ",
-                        "run does not model evidence; not compared")
+    if evidence
+        println("      ", rpad("", 62), "| evidence rows $(r.evidence_rows), evidence ",
+                "probability $(r.evidence_probability); solutionMatchesE $(r.solutionMatches), ",
+                "solutionWithinE $(r.solutionWithin); optimal $(exactly), approx ",
+                "$(r.theorem_recorded_solution_approx_optimal_evidence), binary64 near $(near)")
+    else
+        println("      ", rpad("", 62), "| solutionMatches $(r.solutionMatches), solutionWithin ",
+                "$(r.solutionWithin); optimal $(exactly), approx ",
+                "$(r.theorem_recorded_solution_approx_optimal), binary64 ",
+                "$(r.theorem_recorded_binary64_approx_optimal), near $(near); sliced run: ",
+                "solutionMatchesE $(r.solutionMatchesE), solutionWithinE $(r.solutionWithinE)")
+    end
     for f in r.fails
         println("        ", f)
     end
@@ -703,11 +727,34 @@ for c in CERT_MODELS
     end
 end
 
+# Hard evidence: the same models, observed. The diagram file is the unobserved one (evidence is
+# not part of the ACSet); the rational companions are those of the unobserved certificate, whose
+# cells are the same.
+const EVIDENCE_CASES = [("umbrella", [:Forecast => :sunny]), ("umbrella", [:Weather => :rainy]),
+                        ("two_stage (oil wildcatter)", [:Oil => :wet]),
+                        ("reference_grazing", [:ClimateForecast => :dry, :SoilMoisture => :low])]
+for (name, ev) in EVIDENCE_CASES
+    haskey(CERT_BASES, name) || continue
+    c = only(x for x in CERT_MODELS if x.name == name)
+    observed = observe(c.model, ev)
+    label = name * " | " * join(("$(k)=$(v)" for (k, v) in ev), ", ")
+    b64 = JSON3.read(read(CERT_BASES[name], String), Dict{String,Any})
+    for (mode, kw) in (("binary64", (;)),
+                       ("rational", (; numeric_mode=:rational_exact,
+                                     exact_tables=companions(b64))))
+        for (run, backend) in (("dve", true), ("stable", STABLE))
+            p = solution_case(label, c.diagram, mode, run,
+                              () -> export_dve_certificate(observed; kw..., solution=backend))
+            p === nothing || (SOLUTION_BASES[(label, mode, run)] = p)
+        end
+    end
+end
+
 const SOLUTION_MUTATIONS = Any[]
 function solution_mutation(name, mode, run, label, f!)
     haskey(SOLUTION_BASES, (name, mode, run)) || return
     base = SOLUTION_BASES[(name, mode, run)]
-    diagram = only(c.diagram for c in CERT_MODELS if c.name == name)
+    diagram = only(c.diagram for c in CERT_MODELS if c.name == first(split(name, " | ")))
     doc = JSON3.read(read(base, String), Dict{String,Any})
     f!(doc)
     path = joinpath(OUT, "solmut_" * slug(name) * "_" * slug(mode) * "_" * run * "_" *
@@ -762,6 +809,12 @@ solution_mutation(OIL, "rational", "stable", "missing solution key (policies)",
                   d -> delete!(d["solution"], "policies"))
 solution_mutation(OIL, "rational", "stable", "ill-typed solution key (exact_fallback a string)",
                   d -> (d["solution"]["exact_fallback"] = "no"))
+# A solution recorded under one observation, checked against another (or none).
+const UMB_EV = "umbrella | Forecast=sunny"
+solution_mutation(UMB_EV, "rational", "stable", "evidence on another state (Forecast=rainy)",
+                  d -> (d["evidence"]["hard"][1]["state_index"] = 2))
+solution_mutation(UMB_EV, "rational", "stable", "evidence row removed",
+                  d -> empty!(d["evidence"]["hard"]))
 
 npass = count(r -> r.ok, RESULTS)
 nmut = count(r -> r.lean_ok, MUTATIONS)
@@ -794,15 +847,36 @@ nagree = count(r -> r.agree == "yes", compared)
 println("Version-2 certificates agreeing with the exact Lean run: $(nsol) of $(length(compared)) " *
         "($(nexactrun) exact runs equal exactly, $(nb64) binary64 runs within tau); recorded " *
         "actions equal the exact run's in $(nagree); recorded_solution_optimal applies to " *
-        "$(count(r -> r.exactly == "applies", compared)); not compared (evidence): " *
-        "$(length(SOLUTIONS) - length(compared)).")
+        "$(count(r -> r.exactly == "applies", compared)); recorded_binary64_near_optimal " *
+        "applies to $(count(r -> r.near == "applies", compared)).")
 for r in compared
     r.ok || println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
                     "disagrees with the exact Lean run")
+end
+# The sliced run's checker on certificates without evidence: the same verdict as the plain one.
+sliced_verdict(r) = r.arith == "exact_rational" ? r.r.solutionMatchesE : r.r.solutionWithinE
+plain_verdict(r) = r.arith == "exact_rational" ? r.r.solutionMatches : r.r.solutionWithin
+nsliced = count(r -> sliced_verdict(r) == plain_verdict(r), compared)
+println("Sliced-run checker on the certificates without evidence: same verdict as the plain " *
+        "checker on $(nsliced) of $(length(compared)).")
+withev = filter(r -> r.evidence, SOLUTIONS)
+nsolE = count(r -> r.ok, withev)
+println("Version-2 certificates with hard evidence agreeing with the exact sliced Lean run: " *
+        "$(nsolE) of $(length(withev)) " *
+        "($(count(r -> r.ok && r.arith == "exact_rational", withev)) exact runs equal exactly, " *
+        "$(count(r -> r.ok && r.arith == "binary64", withev)) binary64 runs within tau); " *
+        "recorded actions equal the exact run's in $(count(r -> r.agree == "yes", withev)); " *
+        "recorded_solution_optimal_evidence applies to " *
+        "$(count(r -> r.exactly == "applies", withev)); recorded_binary64_near_optimal_evidence " *
+        "applies to $(count(r -> r.near == "applies", withev)).")
+for r in withev
+    r.ok || println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
+                    "disagrees with the exact sliced Lean run")
 end
 nsmut = count(r -> r.rejected, SOLUTION_MUTATIONS)
 println("Solution mutations rejected by Lean: $(nsmut) of $(length(SOLUTION_MUTATIONS)).")
 exit(npass == length(RESULTS) && nmut == length(MUTATIONS) && naccept == 0 &&
      nverdict == length(VERDICTS) && ncert == length(CERTS) &&
      ncmut == length(CERT_MUTATIONS) && nsol == length(compared) &&
+     nsliced == length(compared) && nsolE == length(withev) &&
      nsmut == length(SOLUTION_MUTATIONS) ? 0 : 1)

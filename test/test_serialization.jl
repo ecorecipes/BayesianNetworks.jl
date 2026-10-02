@@ -125,6 +125,48 @@ using JSON3
              (a -> (a["State"][3] = [1]), "State row 3 must be an object")]
             @test occursin(fragment, message(mutated(f!)))
         end
+        # An `"_id"`, hom or position must be a JSON integer literal. JSON3 reads `1.0`,
+        # `1e0` and `1E0` as the `Int64` 1, so the reader checks the number's spelling;
+        # `-1` is an integer literal out of range, `1.5` and a very large integer are
+        # `Float64`s. The cell is replaced by its spelling in the text the writer produced.
+        function respelled(table, row, col, spelling)
+            d = JSON3.read(base, Dict{String,Any})
+            d["acset"][table][row][col] = "\0SPELLING\0"
+            return replace(JSON3.write(d), "\"\\u0000SPELLING\\u0000\"" => spelling)
+        end
+        ids = (("State", 2, "_id"), ("Mechanism", 1, "target"),
+               ("Input", 1, "input_variable"), ("Input", 1, "input_position"),
+               ("State", 1, "state_position"))
+        for (table, row, col) in ids
+            v = JSON3.read(base, Dict{String,Any})["acset"][table][row][col]
+            # The literal itself is read, so each mutation below changes only the spelling.
+            @test parse_json_bayesnet(respelled(table, row, col, string(v))) == ref
+            for spelling in (string(v, ".0"), string(v, "e0"), string(v, "E0"),
+                             string(v, "E+0"), string(v, "0e-1"), string("0", v),
+                             string("+", v), "-1", "1.5", "99999999999999999999",
+                             "9223372036854775808")
+                str = respelled(table, row, col, spelling)
+                @test JSON3.read(str) isa JSON3.Object       # still JSON for JSON3
+                msg = message(str)
+                @test occursin("$table row $row: column \"$col\"", msg)
+                @test occursin("integer literal", msg)
+                @test occursin("got the number $spelling", msg)
+            end
+        end
+        # A very large integer literal in a position is still rejected: it is not an `Int`.
+        @test occursin("integer literal in 1:$(typemax(Int))",
+                       message(respelled("State", 1, "state_position",
+                                         "99999999999999999999")))
+        # A string that looks like a number, and an exponent inside a string, are untouched.
+        @test occursin("got a string", message(respelled("State", 1, "_id", "\"1\"")))
+        @test parse_json_bayesnet(replace(base, "\"Climate\"" => "\"1e0 \\\" 1.0\"")) isa
+              BayesNet
+        # The text is parsed as text, never as the path of a file (JSON3 reads a short
+        # string that names a file as that file), so text and spellings agree.
+        path = write_json_bayesnet(joinpath(mktempdir(), "net.json"), ref)
+        @test read_json_bayesnet(path) == ref
+        @test_throws FormatError parse_json_bayesnet(path)
+
         # The columns come from the schema, and are the Lean decoder's `bnColumns`.
         cols(ob) = [c => kind
                     for (c, (kind, _)) in BayesianNetworks._json_columns(SchBayesNet, ob)]

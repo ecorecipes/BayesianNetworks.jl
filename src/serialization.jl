@@ -94,9 +94,67 @@ end
 _as_strings(v, key) = String[_as_string(x, key) for x in _as_array(v, key)]
 _as_symbols(v, key) = Symbol[_as_symbol(x, key) for x in _as_array(v, key)]
 
+# The text is parsed as text: `JSON3.read` of a `String` shorter than 255 bytes that names
+# an existing file would read that file instead, so the reader parses the code units.
 function _read_json(str::AbstractString)
-    return _decoding(() -> JSON3.read(str), ArgumentError, "the text is not JSON")
+    return _decoding(() -> JSON3.read(codeunits(String(str))), ArgumentError,
+                     "the text is not JSON")
 end
+
+# The spellings of the numbers of a JSON text `str` that `_read_json` has read: the same
+# tree, with every number replaced by the string of its source text (`"1.0"`, `"1e0"`).
+# JSON3 reads every integral number as an `Int64`, so `1`, `1.0`, `1e0`, `1E0`, `10e-1`,
+# `1.`, `01` and `+1` are all the `Int64` 1 in `_read_json`'s tree; the ID, hom and
+# position columns of an `"acset"` body need the spelling (`_check_acset_body`).
+#
+# Each number of `str`, outside a string, is quoted, and the result is read by JSON3 again,
+# so the tree has the shape and the keys of `_read_json`'s. A number starts with `-`, `+`
+# or a digit and runs to the next delimiter: JSON3 accepted `str`, so it is followed by
+# whitespace, `,`, `]` or `}`, and its text has no character that needs escaping.
+const _JSON_NUMBER_ENDS = (UInt8(','), UInt8(']'), UInt8('}'), UInt8(':'), UInt8('['),
+                           UInt8('{'), UInt8('"'), UInt8(' '), UInt8('\t'), UInt8('\n'),
+                           UInt8('\r'))
+function _json_number_spellings(str::AbstractString)
+    bytes = codeunits(String(str))
+    io = IOBuffer()
+    i, n, in_string = 1, length(bytes), false
+    while i <= n
+        b = bytes[i]
+        if in_string
+            write(io, b)
+            if b == UInt8('\\') && i < n
+                i += 1
+                write(io, bytes[i])
+            elseif b == UInt8('"')
+                in_string = false
+            end
+            i += 1
+        elseif b == UInt8('"')
+            in_string = true
+            write(io, b)
+            i += 1
+        elseif b == UInt8('-') || b == UInt8('+') || UInt8('0') <= b <= UInt8('9')
+            j = i
+            while j <= n && !(bytes[j] in _JSON_NUMBER_ENDS)
+                j += 1
+            end
+            write(io, UInt8('"'), view(bytes, i:(j - 1)), UInt8('"'))
+            i = j
+        else
+            write(io, b)
+            i += 1
+        end
+    end
+    return JSON3.read(take!(io))
+end
+
+# A JSON integer literal, `-?(0|[1-9][0-9]*)`: no fraction, no exponent, no `+` and no
+# leading zero, the rule of the Lean decoder's documentation ("written without a fraction
+# or exponent"). The decoder itself reads a parsed tree, where an integer is a `Json.num`
+# with exponent `0`; `Lean.Json.parse`, which is trusted, also gives exponent `0` to `1e0`,
+# `1E+0`, `1e-0` and `1.0e1`, so the Lean pipeline from text accepts those spellings, and
+# this reader does not.
+_is_integer_literal(s) = s isa AbstractString && occursin(r"^-?(0|[1-9][0-9]*)$", s)
 function _decode_ref(x, what)
     return _decoding(() -> _kernel_ref_from(x), Union{ArgumentError,_SHAPE_ERRORS}, what)
 end
@@ -148,7 +206,8 @@ fault:
   attribute), or a value has the wrong JSON type or range: an `"_id"` other than the row
   number, a hom that is not the ID of a row of its codomain, a position that is not an
   integer `>= 1`, a label that is not a string, or a `Ref` that is not a
-  [`KernelRef`](@ref) object with exactly its type's keys.
+  [`KernelRef`](@ref) object with exactly its type's keys. An `"_id"`, hom or position
+  must be written as a JSON integer literal: `1`, not `1.0`, `1e0` or `01`.
 
 These are the rules of the proved Lean decoder
 (`proofs/BayesianNetworksProofs/Finite/JsonRecords.lean`). A document that passes them can
@@ -156,12 +215,13 @@ still describe an invalid network, such as a cycle or repeated input positions:
 [`validate`](@ref) reports those.
 """
 function parse_json_bayesnet(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
-    return _parse_envelope(_read_json(str), type)
+    return _parse_envelope(_read_json(str), str, type)
 end
 
-function _parse_envelope(obj, type)
+# `obj` is `_read_json(str)`.
+function _parse_envelope(obj, str, type)
     _check_envelope(obj, (:format, :schema_version, :acset))
-    return _parse_acset(type, obj[:acset])
+    return _parse_acset(type, obj[:acset], _json_number_spellings(str)[:acset])
 end
 
 function _check_envelope(obj, keys)
@@ -177,13 +237,14 @@ function _check_envelope(obj, keys)
 end
 
 # The `"acset"` body: checked against the schema of `type` (`_check_acset_body`), then read
-# by ACSets' `parse_json_acset`. See "Decoding failures": the one scoped catch-all of the
-# decoders, because the parser is third-party and reads only the document, so what it
-# raises is about the document (ADR 0015).
-function _parse_acset(type, body)
+# by ACSets' `parse_json_acset`; `spellings` is the body in `_json_number_spellings` of the
+# document. See "Decoding failures": the one scoped catch-all of the decoders, because the
+# parser is third-party and reads only the document, so what it raises is about the
+# document (ADR 0015).
+function _parse_acset(type, body, spellings)
     body isa AbstractDict ||
         throw(FormatError("the \"acset\" body must be an object, got $(_json_kind(body))"))
-    _check_acset_body(type, body)
+    _check_acset_body(type, body, spellings)
     try
         return parse_json_acset(type, body)
     catch e
@@ -207,7 +268,10 @@ end
 #   `"_id"`, the homs out of the object and the attributes on it;
 # - `"_id"` is `k`; a hom is the ID of a row of its codomain table; a `Position` is an
 #   integer `>= 1`; a `Label` is a string; a `Ref` is a `KernelRef` object with exactly
-#   the keys of its type, each a string.
+#   the keys of its type, each a string;
+# - an `"_id"`, hom or `Position` is written as an integer literal (`_is_integer_literal`):
+#   JSON3 reads `1.0` and `1e0` as the `Int64` 1, so the check reads the number's spelling
+#   in `spellings`, the body in `_json_number_spellings` of the document.
 #
 # Unchecked, ACSets' parser read a missing table as zero rows, a missing attribute as unset
 # and a number as a label (`Symbol("5")`), and accepted a `null` attribute.
@@ -239,7 +303,7 @@ _json_keys(d) = Symbol[Symbol(k) for k in keys(d)]
 _json_get(d, k::Symbol) = haskey(d, k) ? d[k] : d[String(k)]
 _json_integer(v) = v isa Integer && !(v isa Bool)
 
-function _check_acset_body(type, body)
+function _check_acset_body(type, body, spellings)
     S = acset_schema(type())
     function fail(msg)
         throw(FormatError("the \"acset\" body is not a valid $(nameof(type)): $msg"))
@@ -266,6 +330,7 @@ function _check_acset_body(type, body)
     nrows = Dict{Symbol,Int}(T => length(_json_get(body, T)) for T in obs)
     for T in obs
         cols = _json_columns(S, T)
+        spelled_rows = _json_get(spellings, T)
         for (k, row) in enumerate(_json_get(body, T))
             row isa AbstractDict ||
                 fail("$T row $k must be an object, got $(_json_kind(row))")
@@ -276,8 +341,10 @@ function _check_acset_body(type, body)
             for c in keys_k
                 haskey(cols, c) || fail("$T row $k: unknown column \"$c\"")
             end
+            spelled_row = spelled_rows[k]
             for (c, (kind, codom)) in cols
-                problem = _column_problem(_json_get(row, c), kind, codom, k, nrows)
+                v, spelling = _json_get(row, c), _json_get(spelled_row, c)
+                problem = _column_problem(v, spelling, kind, codom, k, nrows)
                 problem === nothing || fail("$T row $k: column \"$c\" $problem")
             end
         end
@@ -285,18 +352,24 @@ function _check_acset_body(type, body)
     return nothing
 end
 
-# What is wrong with the value `v` of a column of kind `kind` in row `k`, or `nothing`.
-function _column_problem(v, kind::Symbol, codom::Symbol, k::Int, nrows)
-    if kind === :id
-        _json_integer(v) && v == k && return nothing
-        return "must be the row number $k, got $(_json_kind(v))"
-    elseif kind === :hom
-        n = nrows[codom]
-        _json_integer(v) && 1 <= v <= n && return nothing
-        return "must be the ID of a \"$codom\" row, an integer in 1:$n, got $(_json_kind(v))"
-    elseif kind === :position
-        _json_integer(v) && 1 <= v <= typemax(Int) && return nothing
-        return "must be a one-based position, an integer >= 1, got $(_json_kind(v))"
+# What is wrong with the value `v` of a column of kind `kind` in row `k`, or `nothing`;
+# `spelling` is the value in `_json_number_spellings`, the source text of a number.
+function _column_problem(v, spelling, kind::Symbol, codom::Symbol, k::Int, nrows)
+    if kind in (:id, :hom, :position)
+        int = _json_integer(v) && _is_integer_literal(spelling)
+        got = v isa Number && !(v isa Bool) ? "the number $spelling" : _json_kind(v)
+        if kind === :id
+            int && v == k && return nothing
+            return "must be the row number $k, an integer literal, got $got"
+        elseif kind === :hom
+            n = nrows[codom]
+            int && 1 <= v <= n && return nothing
+            return "must be the ID of a \"$codom\" row, an integer literal in 1:$n, got $got"
+        else
+            int && 1 <= v <= typemax(Int) && return nothing
+            return "must be a one-based position, an integer literal in 1:$(typemax(Int)), " *
+                   "got $got"
+        end
     elseif kind === :label
         v isa AbstractString && return nothing
         return "must be a string, got $(_json_kind(v))"
@@ -355,7 +428,8 @@ or column or a value of the wrong JSON type or range; the message names the tabl
 and column. A missing file is Base's `SystemError`.
 """
 function read_json_bayesnet(path::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet)
-    return _parse_envelope(_read_json(read(path, String)), type)
+    str = read(path, String)
+    return _parse_envelope(_read_json(str), str, type)
 end
 
 """
@@ -619,7 +693,7 @@ through unchanged.
 function parse_json_model(str::AbstractString; type::Type{<:AbstractBayesNet}=BayesNet,
                           atol::Real=DEFAULT_ATOL)
     obj = _read_json(str)
-    bn = _parse_envelope(obj, type)
+    bn = _parse_envelope(obj, str, type)
     spaces = syntax_spaces(bn)
     kernels = Dict{KernelRef,FiniteKernel}()
     if haskey(obj, :semantics)

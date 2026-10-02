@@ -178,9 +178,12 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   `bnColumns`/`idColumns` in `Finite/JsonRecords.lean`); a failure is a `FormatError` naming the
   table, row and column. Only then does ACSets' parser run, under the one scoped catch-all (a
   third-party parser of document data); InfluenceDiagrams' readers use it too. Never add a catch of
-  `MethodError`. JSON3 reads `1.0` as the integer `1`, so that one Lean rejection is not
-  reproduced. In memory, `validation_errors` reports an unset `Label`/`Position` attribute as
-  `MissingAttributeError` and skips the checks that read attributes.
+  `MethodError`. JSON3 reads `1.0`, `1e0` and `01` as the integer `1`, so an `"_id"`, hom or
+  position is also checked by its spelling (`_json_number_spellings`, `_is_integer_literal`): it
+  must be an integer literal. `Lean.Json.parse` gives `1e0` and `1.0e1` exponent `0`, so the Lean
+  pipeline from text accepts those; this reader does not. In memory, `validation_errors` reports
+  an unset `Label`/`Position` attribute as `MissingAttributeError` and skips the checks that read
+  attributes.
 - `src/graphics.jl`: `to_graphviz` for networks and models (a `Graphviz.Graph` built by hand)
   and `_graphviz_environment!` (called from `__init__`; kept because
   `CategoricalBayesianNetworks.jl` still uses Catlab's renderer for wiring diagrams, which

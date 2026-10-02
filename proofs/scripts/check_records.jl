@@ -43,6 +43,18 @@
 # repeated variable in the topological order, a missing field and others) must be rejected; Julia
 # has no certificate reader, so there is no Julia verdict for them.
 #
+# A fifth part writes version-2 certificates (`export_dve_certificate(m; solution = …)`), which
+# record Julia's DVE solution, for the same diagrams in both numeric modes and both runs: the
+# default binary64 run (`dve`) and the exact-rational run (`stable`,
+# `DecisionVariableElimination(stable = true)`). `check_certificate` decodes them
+# (`decodeAnyCertificate`) and compares the recorded policy tables, scores and value with the exact
+# Lean run on Julia's elimination order: exactly for an exact run (`solutionMatches`), within
+# `tau = tauv = 1e-9` for a binary64 run (`solutionWithin`), printing whether the actions agree
+# and the largest action loss, score and value discrepancies. A disagreement is a finding about
+# Julia, recorded, not fixed. Mutated solutions (a wrong action, a swapped entry order, a missing
+# entry, a wrong value, axes in the wrong order, and the version and key-count exclusions) must
+# be rejected.
+#
 # Trusted, not proved: Lean.Json.parse, Julia's JSON3/ACSets writer, and this script.
 
 using BayesianNetworks
@@ -618,6 +630,139 @@ if haskey(CERT_BASES, "two_stage (oil wildcatter)")
                         (s[1]["variable"], s[2]["variable"]) = (s[2]["variable"], s[1]["variable"])))
 end
 
+# Version-2 certificates: Julia's recorded solution against the exact Lean run.
+println("\n== Version-2 certificates (recorded solutions) ==")
+const SOLUTIONS = Any[]
+const STABLE = DecisionVariableElimination(; stable=true)
+
+function run_cert2(diagram, cert)
+    r = run_cert(diagram, cert)
+    field(prefix) = begin
+        l = filter(x -> startswith(x, prefix), r.lines)
+        isempty(l) ? "-" : strip(l[1][(length(prefix) + 1):end])
+    end
+    keys_ = ("certificate", "solution arithmetic", "solution data", "solution plan",
+             "evidence rows", "exact value", "recorded value", "value discrepancy",
+             "actions agree", "actions differing", "action loss", "score discrepancy",
+             "solutionMatches", "solutionWithin", "theorem recorded_solution_optimal",
+             "theorem recorded_solution_approx_optimal",
+             "theorem recorded_binary64_approx_optimal", "solution entries")
+    return merge((status=r.status, matches=r.matches, exact=r.exact, fails=r.fails),
+                 NamedTuple{Tuple(Symbol.(replace.(keys_, " " => "_")))}(Tuple(field(k * ": ")
+                                                                               for k in keys_)))
+end
+
+function solution_case(name, diagram, mode, run, export_cert)
+    label = "$name [$mode, $run]"
+    path = joinpath(OUT, "cert2_" * slug(name) * "_" * slug(mode) * "_" * run * ".json")
+    cert = try
+        export_cert()
+    catch e
+        println("SKIP  ", rpad(label, 62), "(export_dve_certificate: $(nameof(typeof(e))))")
+        return nothing
+    end
+    write(path, JSON3.write(cert))
+    r = run_cert2(diagram, path)
+    arith = r.solution_arithmetic
+    evidence = r.evidence_rows != "0"
+    verdict = arith == "exact_rational" ? r.solutionMatches : r.solutionWithin
+    ok = r.status == 0 && r.matches == "yes" && verdict == "yes"
+    push!(SOLUTIONS, (name=name, mode=mode, run=run, ok=ok, arith=arith, evidence=evidence,
+                      agree=r.actions_agree, entries=r.solution_entries,
+                      exactly=r.theorem_recorded_solution_optimal, r=r))
+    status = ok ? "PASS" : (evidence ? "SKIP" : "FAIL")
+    println(rpad(status, 6), rpad(label, 62), "| $(arith), data $(r.solution_data), plan ",
+            "$(r.solution_plan), entries $(r.solution_entries), actions agree $(r.actions_agree)")
+    println("      ", rpad("", 62), "| value $(r.recorded_value) vs exact $(r.exact_value): ",
+            "discrepancy $(r.value_discrepancy); action loss $(r.action_loss), score ",
+            "discrepancy $(r.score_discrepancy)")
+    println("      ", rpad("", 62), "| solutionMatches $(r.solutionMatches), solutionWithin ",
+            "$(r.solutionWithin); optimal $(r.theorem_recorded_solution_optimal), approx ",
+            "$(r.theorem_recorded_solution_approx_optimal), binary64 ",
+            "$(r.theorem_recorded_binary64_approx_optimal)")
+    evidence && println("      ", rpad("", 62), "| evidence rows $(r.evidence_rows): the Lean ",
+                        "run does not model evidence; not compared")
+    for f in r.fails
+        println("        ", f)
+    end
+    return path
+end
+
+const SOLUTION_BASES = Dict{Tuple{String,String,String},String}()
+for c in CERT_MODELS
+    haskey(CERT_BASES, c.name) || continue
+    b64 = JSON3.read(read(CERT_BASES[c.name], String), Dict{String,Any})
+    for (mode, kw) in (("binary64", (;)),
+                       ("rational", (; numeric_mode=:rational_exact,
+                                     exact_tables=companions(b64))))
+        for (run, backend) in (("dve", true), ("stable", STABLE))
+            p = solution_case(c.name, c.diagram, mode, run,
+                              () -> export_dve_certificate(c.model; kw..., solution=backend))
+            p === nothing || (SOLUTION_BASES[(c.name, mode, run)] = p)
+        end
+    end
+end
+
+const SOLUTION_MUTATIONS = Any[]
+function solution_mutation(name, mode, run, label, f!)
+    haskey(SOLUTION_BASES, (name, mode, run)) || return
+    base = SOLUTION_BASES[(name, mode, run)]
+    diagram = only(c.diagram for c in CERT_MODELS if c.name == name)
+    doc = JSON3.read(read(base, String), Dict{String,Any})
+    f!(doc)
+    path = joinpath(OUT, "solmut_" * slug(name) * "_" * slug(mode) * "_" * run * "_" *
+                         slug(label) * ".json")
+    write(path, JSON3.write(doc))
+    r = run_cert2(diagram, path)
+    rejected = r.status != 0
+    why = if startswith(r.certificate, "error")
+        "decoder: " * r.certificate
+    elseif r.solution_plan == "FAIL"
+        "solution plan FAIL"
+    else
+        "solutionMatches $(r.solutionMatches), solutionWithin $(r.solutionWithin)"
+    end
+    push!(SOLUTION_MUTATIONS, (name=name, label="$label [$mode, $run]", rejected=rejected, why=why))
+    println(rpad(rejected ? "PASS" : "FAIL", 6), rpad("$name: $label [$mode, $run]", 72),
+            "| lean: ", rejected ? "rejected ($why)" : "ACCEPTED")
+end
+
+# Entry `at` [0, 0] of the second policy (Drill) of the oil wildcatter has the action state "8".
+other_state(a) = a == "8" ? "9" : "8"
+const OIL = "two_stage (oil wildcatter)"
+for (mode, run) in (("rational", "stable"), ("binary64", "dve"))
+    solution_mutation(OIL, mode, run, "wrong action (Drill, row [0, 0])",
+                      d -> (e = d["solution"]["policies"][2]["entries"][1];
+                            e["action"] = other_state(e["action"])))
+    solution_mutation(OIL, mode, run, "swapped entry order (Drill, rows 1 and 2)",
+                      d -> (es = d["solution"]["policies"][2]["entries"];
+                            (es[1], es[2]) = (es[2], es[1])))
+    solution_mutation(OIL, mode, run, "missing entry (Drill, last row)",
+                      d -> pop!(d["solution"]["policies"][2]["entries"]))
+    solution_mutation(OIL, mode, run, "wrong value",
+                      d -> (v = d["solution"]["value"];
+                            haskey(v, "q") ? (v["q"]["num"] = string(parse(BigInt, v["q"]["num"]) +
+                                                                    parse(BigInt, v["q"]["den"]))) :
+                            (v["f64"] = string(reinterpret(UInt64,
+                                                           reinterpret(Float64,
+                                                                       parse(UInt64, v["f64"];
+                                                                             base=16)) + 1.0);
+                                               base=16, pad=16))))
+    solution_mutation(OIL, mode, run, "axes in the wrong order (Drill)",
+                      d -> reverse!(d["solution"]["policies"][2]["axes"]))
+end
+solution_mutation(OIL, "rational", "stable", "wrong score (Drill, row [0, 0])",
+                  d -> (sc = d["solution"]["policies"][2]["entries"][1]["score"]["q"];
+                        sc["num"] = string(parse(BigInt, sc["num"]) + 1)))
+solution_mutation(OIL, "rational", "stable", "version 2 with the version-1 keys (no solution)",
+                  d -> delete!(d, "solution"))
+solution_mutation(OIL, "rational", "stable", "version 1 with a solution (fifteen keys)",
+                  d -> (d["version"] = 1))
+solution_mutation(OIL, "rational", "stable", "missing solution key (policies)",
+                  d -> delete!(d["solution"], "policies"))
+solution_mutation(OIL, "rational", "stable", "ill-typed solution key (exact_fallback a string)",
+                  d -> (d["solution"]["exact_fallback"] = "no"))
+
 npass = count(r -> r.ok, RESULTS)
 nmut = count(r -> r.lean_ok, MUTATIONS)
 nreader = count(r -> startswith(r.julia, "rejected by the reader"), MUTATIONS)
@@ -641,6 +786,23 @@ println("Certificates matching: $(ncert) of $(length(CERTS)) " *
         "$(count(r -> r.mode != "binary64", CERTS)) rational); exactly normalised: $(nexact).")
 ncmut = count(r -> r.rejected, CERT_MUTATIONS)
 println("Certificate mutations rejected by Lean: $(ncmut) of $(length(CERT_MUTATIONS)).")
+compared = filter(r -> !r.evidence, SOLUTIONS)
+nsol = count(r -> r.ok, compared)
+nexactrun = count(r -> r.ok && r.arith == "exact_rational", compared)
+nb64 = count(r -> r.ok && r.arith == "binary64", compared)
+nagree = count(r -> r.agree == "yes", compared)
+println("Version-2 certificates agreeing with the exact Lean run: $(nsol) of $(length(compared)) " *
+        "($(nexactrun) exact runs equal exactly, $(nb64) binary64 runs within tau); recorded " *
+        "actions equal the exact run's in $(nagree); recorded_solution_optimal applies to " *
+        "$(count(r -> r.exactly == "applies", compared)); not compared (evidence): " *
+        "$(length(SOLUTIONS) - length(compared)).")
+for r in compared
+    r.ok || println("  Finding: $(r.name) [$(r.mode), $(r.run)]: Julia's recorded solution " *
+                    "disagrees with the exact Lean run")
+end
+nsmut = count(r -> r.rejected, SOLUTION_MUTATIONS)
+println("Solution mutations rejected by Lean: $(nsmut) of $(length(SOLUTION_MUTATIONS)).")
 exit(npass == length(RESULTS) && nmut == length(MUTATIONS) && naccept == 0 &&
      nverdict == length(VERDICTS) && ncert == length(CERTS) &&
-     ncmut == length(CERT_MUTATIONS) ? 0 : 1)
+     ncmut == length(CERT_MUTATIONS) && nsol == length(compared) &&
+     nsmut == length(SOLUTION_MUTATIONS) ? 0 : 1)

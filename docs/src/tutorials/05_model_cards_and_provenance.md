@@ -327,26 +327,38 @@ This is the last vignette in the series; the scoring layer that fills
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-ChenPollino2012" class="csl-entry">
+```
 
 Chen, Serena H., and Carmel A. Pollino. 2012. “Good Practice in Bayesian
 Network Modelling.” *Environmental Modelling & Software* 37: 134–45.
 <https://doi.org/10.1016/j.envsoft.2012.03.016>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Kaikkonen2021" class="csl-entry">
+```
 
 Kaikkonen, Laura, Tuuli Parviainen, Mika Rahikainen, Laura Uusitalo, and
 Annukka Lehikoinen. 2021. “Bayesian Networks in Environmental Risk
 Assessment: A Review.” *Integrated Environmental Assessment and
 Management* 17 (1): 62–78. <https://doi.org/10.1002/ieam.4332>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Marcot2006" class="csl-entry">
+```
 
 Marcot, Bruce G., J. Douglas Steventon, Glenn D. Sutherland, and Robert
 K. McCann. 2006. “Guidelines for Developing and Updating Bayesian Belief
@@ -354,6 +366,10 @@ Networks Applied to Ecological Modeling and Conservation.” *Canadian
 Journal of Forest Research* 36 (12): 3063–74.
 <https://doi.org/10.1139/x06-135>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

@@ -370,28 +370,44 @@ documents a finished model rather than computing with it.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-BaezCourser2020" class="csl-entry">
+```
 
 Baez, John C., and Kenny Courser. 2020. “Structured Cospans.” *Theory
 and Applications of Categories* 35 (48): 1771–822.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-KollerFriedman2009" class="csl-entry">
+```
 
 Koller, Daphne, and Nir Friedman. 2009. *Probabilistic Graphical Models:
 Principles and Techniques*. MIT Press.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-LorenzinZanasi2025" class="csl-entry">
+```
 
 Lorenzin, Antonio, and Fabio Zanasi. 2025. *Bayesian Networks, Markov
 Networks, Moralisation, Triangulation: A Categorical Perspective*.
 <https://arxiv.org/abs/2512.09908>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

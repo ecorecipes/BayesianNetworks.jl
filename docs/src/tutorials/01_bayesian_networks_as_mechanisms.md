@@ -65,8 +65,10 @@ bn = bayesnet(:Climate => [:dry, :normal, :wet],
                             :Occupancy => :HabitatQuality])
 ```
 
+```@raw html
 <div class="c-set">
-<span class="c-set-summary">BayesianNetworks.BayesNet {Variable:7, State:17, Mechanism:7, Input:6, Label:0, Position:0, Ref:0}</span>
+```
+BayesianNetworks.BayesNet {Variable:7, State:17, Mechanism:7, Input:6, Label:0, Position:0, Ref:0}
 
 | Variable |   variable_name | space_ref |
 |---------:|----------------:|----------:|
@@ -117,7 +119,9 @@ bn = bayesnet(:Climate => [:dry, :normal, :wet],
 |     5 |               3 |              5 |              1 |
 |     6 |               4 |              6 |              1 |
 
+```@raw html
 </div>
+```
 
 The same network is available as `reference_habitat_bn()`. Every
 variable that is not named as a target gets a mechanism without inputs
@@ -421,36 +425,56 @@ the first vignette of `CategoricalBayesianNetworks.jl`.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-ChoJacobs2019" class="csl-entry">
+```
 
 Cho, Kenta, and Bart Jacobs. 2019. “Disintegration and Bayesian
 Inversion via String Diagrams.” *Mathematical Structures in Computer
 Science* 29 (7): 938–71. <https://doi.org/10.1017/S0960129518000488>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Fong2012" class="csl-entry">
+```
 
 Fong, Brendan. 2012. *Causal Theories: A Categorical Perspective on
 Bayesian Networks*. <https://arxiv.org/abs/1301.6201>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-KollerFriedman2009" class="csl-entry">
+```
 
 Koller, Daphne, and Nir Friedman. 2009. *Probabilistic Graphical Models:
 Principles and Techniques*. MIT Press.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-PattersonLynchFairbanks2022" class="csl-entry">
+```
 
 Patterson, Evan, Owen Lynch, and James Fairbanks. 2022. “Categorical
 Data Structures for Technical Computing.” *Compositionality* 4 (5).
 <https://doi.org/10.32408/compositionality-4-5>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

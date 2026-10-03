@@ -306,9 +306,13 @@ instead of editing them in place is the subject of
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-JacobsKissingerZanasi2019" class="csl-entry">
+```
 
 Jacobs, Bart, Aleks Kissinger, and Fabio Zanasi. 2019. “Causal Inference
 by String Diagram Surgery.” *Foundations of Software Science and
@@ -316,21 +320,33 @@ Computation Structures (FoSSaCS 2019)*, Lecture notes in computer
 science, vol. 11425: 313–29.
 <https://doi.org/10.1007/978-3-030-17127-8_18>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-LorenzTull2023" class="csl-entry">
+```
 
 Lorenz, Robin, and Sean Tull. 2023. *Causal Models in String Diagrams*.
 <https://arxiv.org/abs/2304.07638>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Pearl2009" class="csl-entry">
+```
 
 Pearl, Judea. 2009. *Causality: Models, Reasoning, and Inference*. 2nd
 ed. Cambridge University Press.
 <https://doi.org/10.1017/CBO9780511803161>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

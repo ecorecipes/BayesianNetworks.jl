@@ -361,9 +361,13 @@ time-indexed models that unroll into ordinary ones.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-LauritzenSpiegelhalter1988" class="csl-entry">
+```
 
 Lauritzen, Steffen L., and David J. Spiegelhalter. 1988. “Local
 Computations with Probabilities on Graphical Structures and Their
@@ -371,32 +375,48 @@ Application to Expert Systems.” *Journal of the Royal Statistical
 Society, Series B* 50 (2): 157–224.
 <https://doi.org/10.1111/j.2517-6161.1988.tb01721.x>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-deMouraUllrich2021" class="csl-entry">
+```
 
 Moura, Leonardo de, and Sebastian Ullrich. 2021. “The Lean 4 Theorem
 Prover and Programming Language.” *Automated Deduction (CADE 28)*,
 Lecture notes in computer science, vol. 12699: 625–35.
 <https://doi.org/10.1007/978-3-030-79876-5_37>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-PattersonLynchFairbanks2022" class="csl-entry">
+```
 
 Patterson, Evan, Owen Lynch, and James Fairbanks. 2022. “Categorical
 Data Structures for Technical Computing.” *Compositionality* 4 (5).
 <https://doi.org/10.32408/compositionality-4-5>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Mathlib2020" class="csl-entry">
+```
 
 The mathlib Community. 2020. “The Lean Mathematical Library.”
 *Proceedings of the 9th ACM SIGPLAN International Conference on
 Certified Programs and Proofs (CPP 2020)*, 367–81.
 <https://doi.org/10.1145/3372885.3373824>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

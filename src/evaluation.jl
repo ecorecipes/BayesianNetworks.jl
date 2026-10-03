@@ -694,7 +694,7 @@ julia> m = reference_habitat_model();
 
 julia> k = conditional(m, :Occupancy, :HabitatQuality);
 
-julia> probability(k, :present, :good)
+julia> round(probability(k, :present, :good); digits = 12)
 0.75
 ```
 """

@@ -326,11 +326,16 @@ presentation_json(m)                        # {"format":"markov-presentation/0.1
 
 ## Vignettes
 
-Rendered vignettes live in [`vignettes/`](vignettes/) and are published in the
-[documentation](https://ecorecipes.github.io/BayesianNetworks.jl/): networks of mechanisms
-and brute-force evaluation, observation versus intervention, serialisation and provenance,
-dynamic networks, and model cards. The wiring-diagram and open-network vignettes are in
-`CategoricalBayesianNetworks.jl`.
+| # | Vignette | Description |
+|---|---|---|
+| 1 | [Bayesian networks as networks of mechanisms](https://github.com/ecorecipes/BayesianNetworks.jl/blob/main/vignettes/01_bayesian_networks_as_mechanisms/01_bayesian_networks_as_mechanisms.md) | Variables, states and mechanisms; validation; the derived graph; binding tables; brute-force evaluation |
+| 2 | [Observation versus intervention](https://github.com/ecorecipes/BayesianNetworks.jl/blob/main/vignettes/02_observation_vs_intervention/02_observation_vs_intervention.md) | Conditioning versus intervening on a chain and a fork, soft interventions and provenance |
+| 3 | [Serialisation, provenance and CatColab export](https://github.com/ecorecipes/BayesianNetworks.jl/blob/main/vignettes/03_serialization_and_provenance/03_serialization_and_provenance.md) | The package's JSON, interchange formats, the free Markov category presentation, CatColab export and the Lean-emitted schema |
+| 4 | [Dynamic networks: templates and unrolling](https://github.com/ecorecipes/BayesianNetworks.jl/blob/main/vignettes/04_dynamic_networks/04_dynamic_networks.md) | Templates for feedback cycles, unrolling as gluing, forward marginals and interventions in one slice |
+| 5 | [Model cards and parameter provenance](https://github.com/ecorecipes/BayesianNetworks.jl/blob/main/vignettes/05_model_cards_and_provenance/05_model_cards_and_provenance.md) | A model card, where the numbers came from, honest validation and the report |
+
+Each vignette is also published as a tutorial in the [documentation](https://ecorecipes.github.io/BayesianNetworks.jl/);
+the sources are the `.qmd` files in [`vignettes/`](vignettes/). The wiring-diagram and open-network vignettes are in `CategoricalBayesianNetworks.jl`.
 
 ## References
 

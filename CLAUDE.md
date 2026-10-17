@@ -116,6 +116,10 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
   helpers that keep spaces and kernel axes in step with `rename_variable` and `substitute`.
   `_resolve_kernel` materialises a `PointMassRef` with FiniteKernels' own
   `compose_kernel(discard_kernel(parents), point_mass(...))`, never Catlab's `compose`/`delete`.
+  The exported `resolve_kernel(bn, mechanism, lookup)` is its public face (mechanism id or
+  name; a lookup keyed by anything but `KernelRef` or `Symbol`, or a non-kernel entry, is an
+  `ArgumentError`); `CategoricalInfluenceDiagrams.jl` binds a closed composite's tables
+  through it. The internal callers keep calling `_resolve_kernel`.
 - `src/certificates.jl`: `proof_certificate(::BayesModel)` exports
   `finite-bn-certificate-1` for the separate literal-Lean consumer. Preserve one-based
   raw part-ID row order, explicit positions, references and every repeated-slot CPT

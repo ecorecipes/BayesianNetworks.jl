@@ -319,6 +319,40 @@ function _lookup_kernel(bn::AbstractBayesNet, mech::Integer, ::KernelRef,
 end
 
 """
+    resolve_kernel(bn::AbstractBayesNet, mechanism, lookup::AbstractDict) -> Union{FiniteKernel,Nothing}
+
+The kernel of `mechanism` (a part id or a mechanism name) of `bn`, resolved through its
+`kernel_ref` in `lookup`, a dictionary keyed in one of two ways:
+
+- by [`KernelRef`](@ref), as [`kernels`](@ref)`(m)` of a model is: the entry under the
+  mechanism's reference. A [`NoRef`](@ref) never resolves through such a dictionary.
+- by target variable name (`Symbol` keys): the entry under the name of the variable the
+  mechanism generates, whatever its reference, so a `NoRef` resolves like any other.
+
+A [`PointMassRef`](@ref)`(s)` does not consult `lookup`: it is materialised as
+`Pa(X) -> I -> X`, the point mass on `s`, composed with the discard of the parents when the
+mechanism has inputs (SPEC section 21.2), as [`kernel`](@ref) does. Returns `nothing` when
+the reference does not resolve.
+
+This is the resolution that [`kernel`](@ref) and [`joint_distribution`](@ref) use, made
+available to packages that hold their tables outside a [`BayesModel`](@ref). An unset `kernel_ref` (a mechanism added with `add_part!` and no
+reference) raises [`MissingAttributeError`](@ref); a name that is not a mechanism raises
+[`UnknownMechanismError`](@ref) (or [`DuplicateNameError`](@ref) when it is ambiguous); a
+`lookup` keyed by anything else, or an entry that is not a `FiniteKernel`, raises
+`ArgumentError`.
+"""
+function resolve_kernel(bn::AbstractBayesNet, mechanism::Union{Integer,Symbol},
+                        lookup::AbstractDict)
+    keytype(lookup) <: KernelRef || keytype(lookup) === Symbol ||
+        throw(ArgumentError("resolve_kernel: lookup must be keyed by KernelRef or by target variable name (Symbol), not $(keytype(lookup))"))
+    mech = _mechanism_id(bn, mechanism)
+    k = _resolve_kernel(bn, mech, lookup)
+    k === nothing || k isa FiniteKernel ||
+        throw(ArgumentError("resolve_kernel: the entry for mechanism $(mechanism_name(bn, mech)) is a $(typeof(k)), not a FiniteKernel"))
+    return k
+end
+
+"""
     kernel(m::BayesModel, :X) -> FiniteKernel
 
 The kernel of the mechanism generating `X`: the entry of `kernels(m)` under the

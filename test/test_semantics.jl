@@ -293,4 +293,59 @@ e_atol(f, args...; kw...) = caught_error(() -> f(args...; kw...)).atol
         @test semantic_errors(mx; semantics=true) == [unset]
         @test isempty(semantic_errors(mx))
     end
+
+    @testset "resolve_kernel" begin
+        bn = syntax(m)
+        occ = mechanism_of(bn, variable_id(bn, :Occupancy))
+        # A named reference through a KernelRef-keyed dictionary, by id and by name.
+        @test resolve_kernel(bn, occ, kernels(m)) == kernel(m, :Occupancy)
+        @test resolve_kernel(bn, :Occupancy_mechanism, kernels(m)) ==
+              kernel(m, :Occupancy)
+        @test resolve_kernel(bn, Int32(occ), kernels(m)) == kernel(m, :Occupancy)
+        # Every mechanism resolves as `kernel` resolves it.
+        @test all(resolve_kernel(bn, mm, kernels(m)) ==
+                  kernel(m, variable_name(bn, target(bn, mm))) for mm in mechanisms(bn))
+        # A dictionary keyed by target variable name, whatever the reference.
+        byname = Dict(:Occupancy => kernel(m, :Occupancy))
+        @test resolve_kernel(bn, occ, byname) == kernel(m, :Occupancy)
+        @test resolve_kernel(bn, :Climate_mechanism, byname) === nothing
+        # Unresolved: an absent reference, and a NoRef through a KernelRef-keyed dictionary.
+        @test resolve_kernel(bn, occ, Dict{KernelRef,FiniteKernel}()) === nothing
+        bn0 = syntax(m0)
+        occ0 = mechanism_of(bn0, variable_id(bn0, :Occupancy))
+        @test kernel_ref(bn0, occ0) == NoRef()
+        @test resolve_kernel(bn0, occ0,
+                             Dict{KernelRef,FiniteKernel}(NoRef() => kernel(m, :Occupancy))) ===
+              nothing
+        # ... which resolves by target name.
+        @test resolve_kernel(bn0, occ0, byname) == kernel(m, :Occupancy)
+        # Point masses, without and with parents, never consult the dictionary.
+        md = do_intervention(m, :Vegetation => :dense)
+        bd = syntax(md)
+        veg = mechanism_of(bd, variable_id(bd, :Vegetation))
+        @test resolve_kernel(bd, veg, Dict{Symbol,FiniteKernel}()) ==
+              point_mass(space(m, :Vegetation), :dense)
+        @test resolve_kernel(bd, veg, kernels(md)) == kernel(md, :Vegetation)
+        bp = bayesnet(:X => [:a, :b], :Y => [:c, :d]; mechanisms=[:Y => :X],
+                      kernel_refs=Dict(:Y => PointMassRef(:d)))
+        ky = resolve_kernel(bp, :Y_mechanism, Dict{KernelRef,FiniteKernel}())
+        @test ky.dom == syntax_space(bp, :X) && ky.codom == syntax_space(bp, :Y)
+        @test ky.table == [0.0 0.0; 1.0 1.0]
+        @test ky == kernel(bind_cpt(BayesModel(bp), :X => [0.5, 0.5]), :Y)
+        # Errors: unknown mechanism, unset reference, a lookup of another key type and an
+        # entry that is not a kernel.
+        @test_throws UnknownMechanismError resolve_kernel(bn, :Nope, kernels(m))
+        @test_throws ArgumentError resolve_kernel(bn, occ, Dict{String,FiniteKernel}())
+        @test_throws ArgumentError resolve_kernel(bn, occ, Dict())
+        @test_throws ArgumentError resolve_kernel(bn, occ, Dict(:Occupancy => [0.5, 0.5]))
+        bu = BayesNet()
+        add_variable!(bu, :X; states=[:a, :b])
+        mu = add_part!(bu, :Mechanism; target=1, mechanism_name=:X_mechanism)
+        e = try
+            resolve_kernel(bu, mu, Dict{Symbol,FiniteKernel}())
+        catch err
+            err
+        end
+        @test e == MissingAttributeError(:Mechanism, mu, :kernel_ref)
+    end
 end

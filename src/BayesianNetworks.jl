@@ -124,7 +124,8 @@ export observe, unobserve, do_intervention, soft_intervention, intervened_variab
        is_intervened, hard_intervention_name
 # semantics.jl
 export axis, syntax_space, syntax_spaces, space, parent_space, bind_kernel, bind_cpt,
-       kernel, missing_kernels, has_semantics, semantic_errors, rename_variable
+       kernel, resolve_kernel, missing_kernels, has_semantics, semantic_errors,
+       rename_variable
 # certificates.jl
 export proof_certificate
 # evaluation.jl

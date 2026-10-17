@@ -181,6 +181,7 @@ parent_space
 bind_kernel
 bind_cpt
 kernel
+resolve_kernel
 missing_kernels
 has_semantics
 semantic_errors
